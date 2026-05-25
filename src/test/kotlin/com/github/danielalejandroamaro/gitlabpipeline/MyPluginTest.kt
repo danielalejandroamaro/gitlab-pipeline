@@ -1,39 +1,29 @@
 package com.github.danielalejandroamaro.gitlabpipeline
 
-import com.intellij.ide.highlighter.XmlFileType
-import com.intellij.openapi.components.service
-import com.intellij.psi.xml.XmlFile
-import com.intellij.testFramework.TestDataPath
+import com.github.danielalejandroamaro.gitlabpipeline.auth.GitLabAuthBridge
+import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
-import com.intellij.util.PsiErrorElementUtil
-import com.github.danielalejandroamaro.gitlabpipeline.services.MyProjectService
 
-@TestDataPath("\$CONTENT_ROOT/src/test/testData")
 class MyPluginTest : BasePlatformTestCase() {
 
-    fun testXMLFile() {
-        val psiFile = myFixture.configureByText(XmlFileType.INSTANCE, "<foo>bar</foo>")
-        val xmlFile = assertInstanceOf(psiFile, XmlFile::class.java)
-
-        assertFalse(PsiErrorElementUtil.hasErrors(project, xmlFile.virtualFile))
-
-        assertNotNull(xmlFile.rootTag)
-
-        xmlFile.rootTag?.let {
-            assertEquals("foo", it.name)
-            assertEquals("bar", it.value.text)
-        }
+    fun testExtractProjectPathHttps() {
+        assertEquals(
+            "group/sub/project",
+            GitLabAuthBridge.extractProjectPath("https://gitlab.example.com/group/sub/project.git"),
+        )
     }
 
-    fun testRename() {
-        myFixture.testRename("foo.xml", "foo_after.xml", "a2")
+    fun testExtractProjectPathSsh() {
+        assertEquals(
+            "group/sub/project",
+            GitLabAuthBridge.extractProjectPath("git@gitlab.example.com:group/sub/project.git"),
+        )
     }
 
-    fun testProjectService() {
-        val projectService = project.service<MyProjectService>()
-
-        assertNotSame(projectService.getRandomNumber(), projectService.getRandomNumber())
+    fun testPipelineStatusTerminal() {
+        assertTrue(PipelineStatus.SUCCESS.isTerminal)
+        assertTrue(PipelineStatus.FAILED.isTerminal)
+        assertFalse(PipelineStatus.RUNNING.isTerminal)
+        assertEquals(PipelineStatus.UNKNOWN, PipelineStatus.fromRaw("nope"))
     }
-
-    override fun getTestDataPath() = "src/test/testData/rename"
 }

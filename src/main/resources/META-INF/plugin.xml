@@ -1,19 +1,44 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
     <id>com.github.danielalejandroamaro.gitlabpipeline</id>
-    <name>gitlab-pipeline</name>
+    <name>GitLab Pipeline Watcher</name>
     <vendor>danielalejandroamaro</vendor>
     <description><![CDATA[
-        <p><b>gitlab-pipeline</b> is a repository that provides a pure template to make it easier to create a new plugin project.</p>
-        <p>The main goal of this template is to speed up the setup phase of plugin development for both new and experienced developers by preconfiguring the project scaffold and CI, linking to the proper documentation pages, and keeping everything organized.</p>
+        <p>Watches GitLab CI pipelines for the current project, reusing the authentication
+        configured in the official JetBrains GitLab plugin (works with self-hosted GitLab too).</p>
+        <ul>
+            <li>Lists recent pipelines with status, ref, SHA and duration.</li>
+            <li>Detects <code>git push --tags</code> and follows the pipeline triggered by the tag until it finishes.</li>
+            <li>Disables itself when the project has no <code>.gitlab-ci.yml</code>.</li>
+        </ul>
     ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
 
+    <dependencies>
+        <plugin id="Git4Idea"/>
+        <plugin id="org.jetbrains.plugins.gitlab"/>
+    </dependencies>
+
     <resource-bundle>messages.MyBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="com.github.danielalejandroamaro.gitlabpipeline.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
-        <postStartupActivity implementation="com.github.danielalejandroamaro.gitlabpipeline.startup.MyProjectActivity" />
+        <toolWindow
+            id="GitLab Pipelines"
+            anchor="bottom"
+            icon="AllIcons.Vcs.Branch"
+            factoryClass="com.github.danielalejandroamaro.gitlabpipeline.toolWindow.PipelineToolWindowFactory"/>
+        <postStartupActivity implementation="com.github.danielalejandroamaro.gitlabpipeline.startup.PipelineWatcherActivity"/>
+        <notificationGroup id="GitLab Pipeline Watcher" displayType="BALLOON"/>
+        <statusBarWidgetFactory
+            id="GitLabPipelineStatusBarWidget"
+            order="last"
+            implementation="com.github.danielalejandroamaro.gitlabpipeline.statusBar.PipelineStatusBarWidgetFactory"/>
     </extensions>
+
+    <projectListeners>
+        <listener
+            class="com.github.danielalejandroamaro.gitlabpipeline.git.PipelinePushListener"
+            topic="git4idea.push.GitPushListener"/>
+    </projectListeners>
 </idea-plugin>
