@@ -2,7 +2,52 @@
 
 # gitlab-pipeline Changelog
 
-## v0.0.1 — 2026-05-25
+## [0.0.2] - 2026-05-25
+
+Feedback visual y soporte de pipelines multi-etapa. La status bar ahora distingue de un vistazo verde/rojo y gira mientras corre; el tool window enseña la franja de stages y la notificación final desglosa qué etapa pasó y cuál falló.
+
+### Status bar widget — bolitas + spinner nativo
+
+- **Iconos como bolitas de color** — nuevo `ui/ColoredDotIcon.kt` que pinta un círculo relleno con `JBColor` (light/dark aware) escalado con `JBUIScale`. Constantes `GREEN` (`#4CAF50 / #5FB85F`), `RED` (`#E53935 / #E57373`), `GREY` y `AMBER`. El widget muestra: verde → último pipeline OK, rojo → falló, gris → cancelled/skipped/unknown, ámbar → manual/scheduled.
+- **Spinner animado durante TODO estado no-terminal** — sustituida la coroutine custom de animación por el `com.intellij.util.ui.Animator` del platform (cycle de 800 ms · 8 frames `AllIcons.Process.Step_1..8`). Antes solo animaba en `RUNNING`; ahora gira también en `CREATED`/`PENDING`/`PREPARING`/`WAITING_FOR_RESOURCE`. Reemplazo motivado por: el `updateWidget(ID())` manual desde la coroutine no siempre repintaba; `Animator` engancha directo con el repaint loop del platform y se ve fluido.
+- **Label castellanizado + etapa actual** — `getSelectedValue()` ahora devuelve `Pipeline #1234 · v1.2.3 — corriendo · etapa: build` (antes era `#1234 running`). Tooltip extendido con `etapa actual: X` y resumen `stages: build 3/3 · test 2/4 · deploy 0/1`. Status strings traducidas en `labelFor()` (terminó OK / falló / cancelado / pendiente / preparando / esperando recursos / etc.).
+
+### Soporte multi-etapa (model + API + service)
+
+- **Modelo nuevo `Job` + `StageSummary`** — `model/Pipeline.kt` añade `Job(id, name, stage, status, allowFailure, webUrl, startedAt, finishedAt, duration)` y `StageSummary(name, status, jobs)`. El `status` del stage se deriva por prioridad: `RUNNING` > `FAILED` (ignorando jobs con `allow_failure: true`) > `PENDING/PREPARING/WAITING/CREATED` > `MANUAL` > `SCHEDULED` > `SKIPPED` > `SUCCESS`. Accesores `succeededJobs`, `failedJobs`, `totalJobs`.
+- **`GitLabApiClient.listJobs(projectId, pipelineId)`** — paginado hasta 5 páginas de 100, `include_retried=false`. Cliente sigue siendo `HttpRequests` + `PRIVATE-TOKEN`, sin nuevas deps.
+- **`GitLabPipelineService.State` extendido** — añade `stages: List<StageSummary>` y `currentStage: String?` (primer stage no-terminal, en orden de declaración). `followUntilTerminal` ahora hace `client.listJobs()` en cada tick y construye los stages preservando el orden del `.gitlab-ci.yml` (`LinkedHashMap`). Al alcanzar terminal, `currentStage` vuelve a null.
+- **Notificación final con breakdown por etapa** — `formatStageBreakdown()` genera bloque texto multi-línea estilo:
+  ```
+  Pipeline #1234 success (87s)
+    [OK]   build (3/3)
+    [FAIL] test (1/4)
+    [SKIP] deploy (0/1)
+  ```
+  Sin emojis (por convención). Marcadores cortos `OK/FAIL/CANCEL/SKIP/RUN/WAIT/MANUAL/SCHED`.
+
+### Tool window — franja de stages
+
+- **`StagesStripPanel`** añadido al `SOUTH` del tool window (`toolWindow/PipelineToolWindowFactory.kt`). Visible sólo mientras hay un pipeline siguiéndose. Renderiza un `FlowLayout` horizontal de "stage chips" separados por flechas `→`. Cada chip = bolita de status + nombre + contador `(succeeded/total)`. El chip de la etapa en curso lleva fondo destacado (`JBColor(#DCE6FF, #3A4D70)`) + borde azul y sufijo `(en curso)`. Bordes verde/rojo para stages success/failed.
+- **Tabla de pipelines unificada con las bolitas** — antes el renderer de la tabla usaba `AllIcons.RunConfigurations.TestPassed/TestFailed`; ahora reutiliza las mismas bolitas verde/rojo/gris/ámbar para coherencia con el widget.
+- **Label superior** del tool window añade ` — etapa: <stage>` cuando hay follow activo.
+
+### Manifest
+
+- **Icono del tool window cambiado** — de `AllIcons.Vcs.Branch` (que sugería branching) a `AllIcons.Toolwindows.ToolWindowBuild` (martillo + engranaje), más coherente con un dashboard de CI/build.
+
+### Bugs y limpieza
+
+- **CHANGELOG header arreglado** — `## v0.0.1 — 2026-05-25` no parseaba con el plugin gradle-changelog (header parser regex pide SemVer puro). Cambiado a formato keepachangelog `## [0.0.1] - 2026-05-25`. La entrada de esta release sigue el mismo formato.
+- **README rebuild** — `README.md` reescrito de cero: fuera el scaffold con `MARKETPLACE_ID` placeholders, ahora describe qué hace el plugin, requisitos (link al 22857 + nota sobre IDE Ultimate vs no-Ultimate), instalación manual desde zip, tabla de componentes internos, limitaciones conocidas (CLI push, heurística de detección de tag) y comandos de desarrollo.
+
+### Detalles de implementación
+
+- **`Animator.dispose()`** se llama directo, no vía `Disposer.dispose()` — `Animator` no implementa `Disposable` en esta versión del platform (se descubrió en build, ver compile error en `PipelineStatusBarWidget.kt:125`).
+- **Coroutine subscription del widget sigue cancelándose** en `dispose()` + el animator se `suspend()` antes de su `dispose()` para que no quede repintando huérfano.
+- **Multi-line tooltips** en el widget vía `\n` en `getTooltipText()` — Swing los renderiza con line break sin necesidad de `<html>`.
+
+## [0.0.1] - 2026-05-25
 
 Primera release publicable. El proyecto pasa de scaffold de [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template) a un plugin funcional que sigue pipelines de GitLab CI dentro del IDE, reutilizando la autenticación del plugin oficial de JetBrains (incluye self-hosted).
 

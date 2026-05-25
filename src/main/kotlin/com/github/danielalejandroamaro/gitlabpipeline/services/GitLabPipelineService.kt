@@ -5,6 +5,7 @@ import com.github.danielalejandroamaro.gitlabpipeline.api.GitLabApiClient
 import com.github.danielalejandroamaro.gitlabpipeline.auth.GitLabAuthBridge
 import com.github.danielalejandroamaro.gitlabpipeline.model.Pipeline
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
+import com.github.danielalejandroamaro.gitlabpipeline.model.StageSummary
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
@@ -40,6 +41,10 @@ class GitLabPipelineService(
         val pipelines: List<Pipeline> = emptyList(),
         val following: Pipeline? = null,
         val followingTag: String? = null,
+        /** Stages of the currently-followed pipeline, in declaration order. */
+        val stages: List<StageSummary> = emptyList(),
+        /** Name of the stage that's currently running (first non-terminal one). null when no follow active. */
+        val currentStage: String? = null,
     )
 
     private val _state = MutableStateFlow(State(ciEnabled = GitLabCiDetector.hasCiFile(project)))
@@ -180,22 +185,62 @@ class GitLabPipelineService(
     private suspend fun followUntilTerminal(client: GitLabApiClient, projectId: Long, pipelineId: Long) {
         while (true) {
             val updated = client.getPipeline(projectId, pipelineId) ?: break
+            val jobs = client.listJobs(projectId, pipelineId)
+            val stages = buildStages(jobs)
+            val currentStage = stages.firstOrNull { !it.status.isTerminal }?.name
             _state.value = _state.value.copy(
                 following = updated,
                 pipelines = listOf(updated) +
                     _state.value.pipelines.filter { it.id != updated.id },
+                stages = stages,
+                currentStage = currentStage,
             )
             if (updated.status.isTerminal) {
                 val durationLabel = updated.duration?.let { "${it}s" } ?: "?"
+                val breakdown = formatStageBreakdown(stages)
+                val baseMsg = MyBundle["notification.pipelineFinished", updated.id.toString(), updated.status.raw, durationLabel]
+                val fullMsg = if (breakdown.isBlank()) baseMsg else "$baseMsg\n$breakdown"
                 notify(
-                    MyBundle["notification.pipelineFinished", updated.id.toString(), updated.status.raw, durationLabel],
+                    fullMsg,
                     if (updated.status == PipelineStatus.SUCCESS) NotificationType.INFORMATION
                     else NotificationType.ERROR,
                 )
-                _state.value = _state.value.copy(following = null, followingTag = null)
+                _state.value = _state.value.copy(following = null, followingTag = null, currentStage = null)
                 break
             }
             delay(8_000L)
+        }
+    }
+
+    /**
+     * Preserves the order in which stages were first introduced by the GitLab jobs response
+     * (which mirrors `.gitlab-ci.yml` declaration order).
+     */
+    private fun buildStages(jobs: List<com.github.danielalejandroamaro.gitlabpipeline.model.Job>): List<StageSummary> {
+        val byStage = linkedMapOf<String, MutableList<com.github.danielalejandroamaro.gitlabpipeline.model.Job>>()
+        for (job in jobs) {
+            byStage.getOrPut(job.stage) { mutableListOf() } += job
+        }
+        return byStage.map { (name, jobsInStage) -> StageSummary.fromJobs(name, jobsInStage) }
+    }
+
+    /** Multi-line summary like "✓ build (3/3) · ✗ test (1/4) · — deploy (skipped)" — without emojis. */
+    private fun formatStageBreakdown(stages: List<StageSummary>): String {
+        if (stages.isEmpty()) return ""
+        return stages.joinToString(separator = "\n") { s ->
+            val marker = when (s.status) {
+                PipelineStatus.SUCCESS -> "OK"
+                PipelineStatus.FAILED -> "FAIL"
+                PipelineStatus.CANCELED -> "CANCEL"
+                PipelineStatus.SKIPPED -> "SKIP"
+                PipelineStatus.RUNNING -> "RUN"
+                PipelineStatus.PENDING, PipelineStatus.PREPARING,
+                PipelineStatus.WAITING_FOR_RESOURCE, PipelineStatus.CREATED -> "WAIT"
+                PipelineStatus.MANUAL -> "MANUAL"
+                PipelineStatus.SCHEDULED -> "SCHED"
+                PipelineStatus.UNKNOWN -> "?"
+            }
+            "  [$marker] ${s.name} (${s.succeededJobs}/${s.totalJobs})"
         }
     }
 

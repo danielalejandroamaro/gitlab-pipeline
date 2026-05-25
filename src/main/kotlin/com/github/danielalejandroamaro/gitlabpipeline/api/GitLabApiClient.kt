@@ -1,5 +1,6 @@
 package com.github.danielalejandroamaro.gitlabpipeline.api
 
+import com.github.danielalejandroamaro.gitlabpipeline.model.Job
 import com.github.danielalejandroamaro.gitlabpipeline.model.Pipeline
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
 import com.intellij.openapi.diagnostic.thisLogger
@@ -102,6 +103,37 @@ class GitLabApiClient(
             )
         }.onFailure { logger.warn("getPipeline($projectId,$pipelineId) failed: ${it.message}") }
             .getOrNull()
+    }
+
+    /** Jobs of a pipeline. Used to derive stages + current stage. */
+    fun listJobs(projectId: Long, pipelineId: Long): List<Job> {
+        // Paginate up to ~5 pages of 100 to cover big pipelines.
+        val results = mutableListOf<Job>()
+        for (page in 1..5) {
+            val url = "$serverUrl/api/v4/projects/$projectId/pipelines/$pipelineId/jobs" +
+                "?per_page=100&page=$page&include_retried=false"
+            val body = runCatching { get(url) }.onFailure {
+                logger.warn("listJobs($projectId,$pipelineId) page=$page failed: ${it.message}")
+            }.getOrNull() ?: break
+            val arr = runCatching { JsonParser.parseString(body).asJsonArray }.getOrNull() ?: break
+            if (arr.size() == 0) break
+            arr.forEach { e ->
+                val obj = e.asJsonObject
+                results += Job(
+                    id = obj["id"].asLong,
+                    name = obj["name"]?.takeIf { !it.isJsonNull }?.asString ?: "(unnamed)",
+                    stage = obj["stage"]?.takeIf { !it.isJsonNull }?.asString ?: "(no-stage)",
+                    status = PipelineStatus.fromRaw(obj["status"]?.takeIf { !it.isJsonNull }?.asString),
+                    allowFailure = obj["allow_failure"]?.takeIf { !it.isJsonNull }?.asBoolean ?: false,
+                    webUrl = obj["web_url"]?.takeIf { !it.isJsonNull }?.asString,
+                    startedAt = obj["started_at"]?.takeIf { !it.isJsonNull }?.asString,
+                    finishedAt = obj["finished_at"]?.takeIf { !it.isJsonNull }?.asString,
+                    duration = obj["duration"]?.takeIf { !it.isJsonNull }?.asDouble,
+                )
+            }
+            if (arr.size() < 100) break
+        }
+        return results
     }
 
     private fun get(url: String): String =

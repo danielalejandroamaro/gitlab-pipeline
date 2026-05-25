@@ -26,7 +26,7 @@
         <toolWindow
             id="GitLab Pipelines"
             anchor="bottom"
-            icon="AllIcons.Vcs.Branch"
+            icon="AllIcons.Toolwindows.ToolWindowBuild"
             factoryClass="com.github.danielalejandroamaro.gitlabpipeline.toolWindow.PipelineToolWindowFactory"/>
         <postStartupActivity implementation="com.github.danielalejandroamaro.gitlabpipeline.startup.PipelineWatcherActivity"/>
         <notificationGroup id="GitLab Pipeline Watcher" displayType="BALLOON"/>

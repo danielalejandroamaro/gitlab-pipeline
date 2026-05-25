@@ -3,8 +3,10 @@ package com.github.danielalejandroamaro.gitlabpipeline.toolWindow
 import com.github.danielalejandroamaro.gitlabpipeline.MyBundle
 import com.github.danielalejandroamaro.gitlabpipeline.model.Pipeline
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
+import com.github.danielalejandroamaro.gitlabpipeline.model.StageSummary
 import com.github.danielalejandroamaro.gitlabpipeline.services.GitLabCiDetector
 import com.github.danielalejandroamaro.gitlabpipeline.services.GitLabPipelineService
+import com.github.danielalejandroamaro.gitlabpipeline.ui.ColoredDotIcon
 import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.application.ApplicationManager
@@ -12,11 +14,13 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
+import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.table.JBTable
+import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,6 +29,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.awt.BorderLayout
+import java.awt.Color
+import java.awt.FlowLayout
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.BorderFactory
@@ -82,6 +88,8 @@ private class PipelinePanel(private val project: Project) {
         addActionListener { service.refresh() }
     }
 
+    private val stagesPanel = StagesStripPanel()
+
     val root: JComponent = JBPanel<JBPanel<*>>(BorderLayout()).apply {
         val top = JPanel(BorderLayout()).apply {
             add(statusLabel, BorderLayout.CENTER)
@@ -89,6 +97,7 @@ private class PipelinePanel(private val project: Project) {
         }
         add(top, BorderLayout.NORTH)
         add(JBScrollPane(table), BorderLayout.CENTER)
+        add(stagesPanel, BorderLayout.SOUTH)
     }
 
     init {
@@ -103,15 +112,19 @@ private class PipelinePanel(private val project: Project) {
             when {
                 !state.ciEnabled -> statusLabel.text = MyBundle["toolWindow.noCi"]
                 state.errorMessage != null -> statusLabel.text = state.errorMessage
-                state.followingTag != null -> statusLabel.text = MyBundle[
-                    "toolWindow.followingTag",
-                    state.followingTag,
-                    state.following?.status?.raw ?: "?",
-                ]
+                state.followingTag != null -> {
+                    val stageHint = state.currentStage?.let { " — etapa: $it" } ?: ""
+                    statusLabel.text = MyBundle[
+                        "toolWindow.followingTag",
+                        state.followingTag,
+                        (state.following?.status?.raw ?: "?") + stageHint,
+                    ]
+                }
                 state.pipelines.isEmpty() -> statusLabel.text = MyBundle["toolWindow.empty"]
                 else -> statusLabel.text = "${state.pipelines.size} pipelines"
             }
             tableModel.update(state.pipelines)
+            stagesPanel.update(state.stages, state.currentStage)
         }
     }
 
@@ -165,15 +178,82 @@ private class StatusIconRenderer : DefaultTableCellRenderer() {
     }
 
     private fun iconFor(status: PipelineStatus): Icon = when (status) {
-        PipelineStatus.SUCCESS -> AllIcons.RunConfigurations.TestPassed
-        PipelineStatus.FAILED -> AllIcons.RunConfigurations.TestFailed
+        PipelineStatus.SUCCESS -> ColoredDotIcon.GREEN
+        PipelineStatus.FAILED -> ColoredDotIcon.RED
+        PipelineStatus.CANCELED, PipelineStatus.SKIPPED -> ColoredDotIcon.GREY
+        PipelineStatus.MANUAL, PipelineStatus.SCHEDULED -> ColoredDotIcon.AMBER
         PipelineStatus.RUNNING -> AllIcons.Actions.Execute
         PipelineStatus.PENDING, PipelineStatus.WAITING_FOR_RESOURCE,
         PipelineStatus.PREPARING, PipelineStatus.CREATED -> AllIcons.Actions.Pause
-        PipelineStatus.CANCELED -> AllIcons.Actions.Cancel
-        PipelineStatus.SKIPPED -> AllIcons.RunConfigurations.TestIgnored
-        PipelineStatus.MANUAL -> AllIcons.Actions.RunAll
-        PipelineStatus.SCHEDULED -> AllIcons.Vcs.History
         PipelineStatus.UNKNOWN -> AllIcons.General.QuestionDialog
+    }
+}
+
+/**
+ * Horizontal strip of "stage chips" — one per stage of the currently-followed
+ * pipeline. The chip for the active stage is highlighted.
+ */
+private class StagesStripPanel : JPanel(FlowLayout(FlowLayout.LEFT, 6, 4)) {
+
+    init {
+        border = BorderFactory.createCompoundBorder(
+            BorderFactory.createMatteBorder(1, 0, 0, 0, JBColor.border()),
+            JBUI.Borders.empty(4, 8),
+        )
+        isVisible = false
+    }
+
+    fun update(stages: List<StageSummary>, currentStage: String?) {
+        removeAll()
+        if (stages.isEmpty()) {
+            isVisible = false
+            revalidate()
+            repaint()
+            return
+        }
+        isVisible = true
+        for ((index, stage) in stages.withIndex()) {
+            add(StageChip(stage, isCurrent = stage.name == currentStage))
+            if (index < stages.size - 1) {
+                add(JBLabel("→").apply { border = JBUI.Borders.emptyLeft(2) })
+            }
+        }
+        revalidate()
+        repaint()
+    }
+}
+
+private class StageChip(stage: StageSummary, isCurrent: Boolean) : JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)) {
+    init {
+        isOpaque = isCurrent
+        if (isCurrent) {
+            background = JBColor(Color(0xDCE6FF), Color(0x3A4D70))
+        }
+        border = BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(borderColor(stage.status, isCurrent), 1, true),
+            JBUI.Borders.empty(2, 6),
+        )
+        add(JBLabel(iconFor(stage.status)))
+        val countLabel = "${stage.succeededJobs}/${stage.totalJobs}"
+        val nameSuffix = if (isCurrent) " (en curso)" else ""
+        add(JBLabel("${stage.name} ($countLabel)$nameSuffix"))
+    }
+
+    private fun iconFor(status: PipelineStatus): Icon = when (status) {
+        PipelineStatus.SUCCESS -> ColoredDotIcon.GREEN
+        PipelineStatus.FAILED -> ColoredDotIcon.RED
+        PipelineStatus.CANCELED, PipelineStatus.SKIPPED -> ColoredDotIcon.GREY
+        PipelineStatus.MANUAL, PipelineStatus.SCHEDULED -> ColoredDotIcon.AMBER
+        PipelineStatus.RUNNING -> AllIcons.Actions.Execute
+        PipelineStatus.PENDING, PipelineStatus.WAITING_FOR_RESOURCE,
+        PipelineStatus.PREPARING, PipelineStatus.CREATED -> AllIcons.Actions.Pause
+        PipelineStatus.UNKNOWN -> AllIcons.General.QuestionDialog
+    }
+
+    private fun borderColor(status: PipelineStatus, isCurrent: Boolean): Color = when {
+        isCurrent -> JBColor(Color(0x3367D6), Color(0x6BAAFF))
+        status == PipelineStatus.FAILED -> JBColor(Color(0xE53935), Color(0xE57373))
+        status == PipelineStatus.SUCCESS -> JBColor(Color(0x4CAF50), Color(0x5FB85F))
+        else -> JBColor.border()
     }
 }

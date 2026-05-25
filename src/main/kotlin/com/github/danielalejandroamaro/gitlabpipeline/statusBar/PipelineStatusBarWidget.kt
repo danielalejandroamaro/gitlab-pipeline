@@ -3,9 +3,9 @@ package com.github.danielalejandroamaro.gitlabpipeline.statusBar
 import com.github.danielalejandroamaro.gitlabpipeline.model.Pipeline
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
 import com.github.danielalejandroamaro.gitlabpipeline.services.GitLabPipelineService
+import com.github.danielalejandroamaro.gitlabpipeline.ui.ColoredDotIcon
 import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.StatusBar
@@ -13,12 +13,12 @@ import com.intellij.openapi.wm.StatusBarWidget
 import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.openapi.wm.impl.status.EditorBasedWidget
 import com.intellij.util.Consumer
+import com.intellij.util.ui.Animator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.awt.event.MouseEvent
@@ -42,10 +42,25 @@ class PipelineStatusBarWidget(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var subscription: Job? = null
-    private var animator: Job? = null
     private var current: Pipeline? = null
     private var followingTag: String? = null
-    private var spinnerFrame: Int = 0
+    private var currentStage: String? = null
+    private var stagesSummary: String = ""
+
+    @Volatile private var spinnerFrame: Int = 0
+
+    /** Platform animator that drives [spinnerFrame] and forces a widget repaint each tick. */
+    private val spinnerAnimator: Animator = object : Animator(
+        "GitLabPipelineSpinner",
+        SPINNER.size,
+        800,                   // cycle duration ms → ~100ms per frame
+        /* isRepeatable = */ true,
+    ) {
+        override fun paintNow(frame: Int, totalFrames: Int, cycle: Int) {
+            spinnerFrame = frame % SPINNER.size
+            myStatusBar?.updateWidget(ID())
+        }
+    }
 
     override fun ID(): String = PipelineStatusBarWidgetFactory.WIDGET_ID
 
@@ -57,58 +72,43 @@ class PipelineStatusBarWidget(
         super<EditorBasedWidget>.install(statusBar)
         subscription = scope.launch {
             project!!.service<GitLabPipelineService>().state.collect { state ->
-                val previous = current
-                current = state.following ?: state.pipelines.firstOrNull { it.tag }
+                val active = state.following ?: state.pipelines.firstOrNull()
+                current = active
                 followingTag = state.followingTag
-                if (state.following != null && state.following.status == PipelineStatus.RUNNING) {
-                    if (animator == null || animator?.isActive != true) startSpinner()
+                currentStage = state.currentStage
+                stagesSummary = if (state.stages.isEmpty()) "" else state.stages.joinToString(
+                    separator = " · ",
+                ) { s -> "${s.name} ${s.succeededJobs}/${s.totalJobs}" }
+
+                val animating = active != null && !active.status.isTerminal
+                if (animating) {
+                    if (spinnerAnimator.isDisposed.not() && !spinnerAnimator.isRunning) spinnerAnimator.resume()
                 } else {
-                    stopSpinner()
+                    if (spinnerAnimator.isRunning) spinnerAnimator.suspend()
                 }
-                if (previous?.id != current?.id || previous?.status != current?.status) {
-                    repaint()
-                }
+                myStatusBar?.updateWidget(ID())
             }
         }
-    }
-
-    private fun startSpinner() {
-        animator?.cancel()
-        animator = scope.launch {
-            while (true) {
-                spinnerFrame = (spinnerFrame + 1) % SPINNER.size
-                repaint()
-                delay(120L)
-            }
-        }
-    }
-
-    private fun stopSpinner() {
-        animator?.cancel()
-        animator = null
-        spinnerFrame = 0
-    }
-
-    private fun repaint() {
-        ApplicationManager.getApplication().invokeLater { myStatusBar?.updateWidget(ID()) }
     }
 
     override fun getSelectedValue(): String? {
         val p = current ?: return null
-        val tagHint = followingTag?.let { " · $it" } ?: ""
-        return "#${p.id} ${p.status.raw}$tagHint"
+        val refHint = (followingTag ?: p.ref)?.let { " · $it" } ?: ""
+        val stageHint = currentStage?.let { " · etapa: $it" } ?: ""
+        return "Pipeline #${p.id}$refHint — ${labelFor(p.status)}$stageHint"
     }
 
     override fun getTooltipText(): String? {
         val p = current ?: return null
         val ref = p.ref ?: "?"
         val sha = p.sha?.take(8) ?: "?"
-        return "GitLab pipeline #${p.id} — ${p.status.raw}\nref: $ref · sha: $sha\n(click to open in browser)"
+        val stageLine = currentStage?.let { "\netapa actual: $it" } ?: ""
+        val breakdown = if (stagesSummary.isNotBlank()) "\nstages: $stagesSummary" else ""
+        return "GitLab pipeline #${p.id} — ${p.status.raw}\nref: $ref · sha: $sha$stageLine$breakdown\n(click to open in browser)"
     }
 
     override fun getIcon(): Icon? {
         val p = current ?: return null
-        if (p.status == PipelineStatus.RUNNING) return SPINNER[spinnerFrame]
         return iconFor(p.status)
     }
 
@@ -119,9 +119,35 @@ class PipelineStatusBarWidget(
 
     override fun dispose() {
         subscription?.cancel()
-        animator?.cancel()
         scope.cancel()
+        if (spinnerAnimator.isRunning) spinnerAnimator.suspend()
+        spinnerAnimator.dispose()
         super<EditorBasedWidget>.dispose()
+    }
+
+    private fun iconFor(status: PipelineStatus): Icon = when (status) {
+        PipelineStatus.SUCCESS -> ColoredDotIcon.GREEN
+        PipelineStatus.FAILED -> ColoredDotIcon.RED
+        PipelineStatus.CANCELED, PipelineStatus.SKIPPED -> ColoredDotIcon.GREY
+        PipelineStatus.MANUAL, PipelineStatus.SCHEDULED -> ColoredDotIcon.AMBER
+        PipelineStatus.UNKNOWN -> ColoredDotIcon.GREY
+        // Any non-terminal state -> spinning frame
+        else -> SPINNER[spinnerFrame]
+    }
+
+    private fun labelFor(status: PipelineStatus): String = when (status) {
+        PipelineStatus.SUCCESS -> "terminó OK"
+        PipelineStatus.FAILED -> "falló"
+        PipelineStatus.CANCELED -> "cancelado"
+        PipelineStatus.SKIPPED -> "skipped"
+        PipelineStatus.MANUAL -> "manual"
+        PipelineStatus.SCHEDULED -> "programado"
+        PipelineStatus.RUNNING -> "corriendo"
+        PipelineStatus.PENDING -> "pendiente"
+        PipelineStatus.PREPARING -> "preparando"
+        PipelineStatus.WAITING_FOR_RESOURCE -> "esperando recursos"
+        PipelineStatus.CREATED -> "creado"
+        PipelineStatus.UNKNOWN -> "?"
     }
 
     companion object {
@@ -135,18 +161,5 @@ class PipelineStatusBarWidget(
             AllIcons.Process.Step_7,
             AllIcons.Process.Step_8,
         )
-
-        fun iconFor(status: PipelineStatus): Icon = when (status) {
-            PipelineStatus.SUCCESS -> AllIcons.RunConfigurations.TestPassed
-            PipelineStatus.FAILED -> AllIcons.RunConfigurations.TestFailed
-            PipelineStatus.RUNNING -> AllIcons.Actions.Execute
-            PipelineStatus.PENDING, PipelineStatus.WAITING_FOR_RESOURCE,
-            PipelineStatus.PREPARING, PipelineStatus.CREATED -> AllIcons.Actions.Pause
-            PipelineStatus.CANCELED -> AllIcons.Actions.Cancel
-            PipelineStatus.SKIPPED -> AllIcons.RunConfigurations.TestIgnored
-            PipelineStatus.MANUAL -> AllIcons.Actions.RunAll
-            PipelineStatus.SCHEDULED -> AllIcons.Vcs.History
-            PipelineStatus.UNKNOWN -> AllIcons.General.QuestionDialog
-        }
     }
 }

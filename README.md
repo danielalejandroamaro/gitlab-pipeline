@@ -1,45 +1,82 @@
-# gitlab-pipeline
+# GitLab Pipeline Watcher
+
+Plugin para IDEs de JetBrains (IntelliJ IDEA, WebStorm, PyCharm, GoLand, Rider, …) que sigue pipelines de GitLab CI desde dentro del IDE reutilizando la autenticación del plugin oficial de JetBrains [GitLab](https://plugins.jetbrains.com/plugin/22857-gitlab). Funciona con instancias self-hosted sin configurar nada propio: si ya tienes una cuenta en `Settings → Version Control → GitLab`, este plugin la reusa.
 
 ![Build](https://github.com/danielalejandroamaro/gitlab-pipeline/workflows/Build/badge.svg)
-[![Version](https://img.shields.io/jetbrains/plugin/v/MARKETPLACE_ID.svg)](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID)
-[![Downloads](https://img.shields.io/jetbrains/plugin/d/MARKETPLACE_ID.svg)](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID)
 
-## Template ToDo list
-- [x] Create a new [IntelliJ Platform Plugin Template][template] project.
-- [ ] Get familiar with the [template documentation][template].
-- [ ] Adjust the [group](./gradle.properties), as well as the [id](./src/main/resources/META-INF/plugin.xml), [name](./src/main/resources/META-INF/plugin.xml), and [sources package](./src/main/kotlin).
-- [ ] Adjust the plugin [description](./src/main/resources/META-INF/plugin.xml) (see [Tips][docs:plugin-description]) and this README to describe what your plugin does.
-- [ ] Review the [Legal Agreements](https://plugins.jetbrains.com/docs/marketplace/legal-agreements.html?from=IJPluginTemplate).
-- [ ] [Publish a plugin manually](https://plugins.jetbrains.com/docs/intellij/publishing-plugin.html?from=IJPluginTemplate) for the first time.
-- [ ] Set the `MARKETPLACE_ID` in the above README badges. You can obtain it once the plugin is published to JetBrains Marketplace.
-- [ ] Set the [Plugin Signing](https://plugins.jetbrains.com/docs/intellij/plugin-signing.html?from=IJPluginTemplate) related [secrets](https://github.com/JetBrains/intellij-platform-plugin-template#environment-variables).
-- [ ] Set the [Deployment Token](https://plugins.jetbrains.com/docs/marketplace/plugin-upload.html?from=IJPluginTemplate).
-- [ ] Click the <kbd>Watch</kbd> button on the top of the [IntelliJ Platform Plugin Template][template] to be notified about releases containing new features and fixes.
+## Qué hace
 
-This Fancy IntelliJ Platform Plugin is going to be your implementation of the brilliant ideas that you have.
+- **Tool window "GitLab Pipelines"** (abajo del IDE) con tabla iconada de los pipelines recientes: status, ref, sha corto, source. Doble clic abre el pipeline en el navegador.
+- **Status bar widget animado** mientras hay un pipeline en `running`: spinner de 8 frames usando los iconos nativos de IntelliJ; al pasar a estado terminal el icono queda fijo (tick verde, cruz roja, cancel, skipped…). Tooltip con ID, status, ref y sha. Click → abre el pipeline.
+- **Detección de push de tag** vía `git4idea.push.GitPushListener`: cualquier push exitoso desde el IDE arranca un seguimiento que polea GitLab hasta encontrar el pipeline disparado por el tag y lo sigue hasta el final. Al iniciar el seguimiento el tool window se abre solo y aparece una notificación; al terminar, otra notificación con duración y resultado.
+- **Auto-desactivación si no hay `.gitlab-ci.yml`**: si el proyecto no tiene el archivo, el tool window y el widget no aparecen. Si lo creas o lo borras en caliente, el plugin reacciona vía `AsyncFileListener` sin reiniciar el IDE.
 
-## Installation
+## Requisitos
 
-- Using the IDE built-in plugin system:
+- IDE basado en IntelliJ Platform ≥ build `252` (IDEA / WebStorm / PyCharm / etc. 2025.2 o superior).
+- **Plugin oficial de GitLab** ([Marketplace 22857](https://plugins.jetbrains.com/plugin/22857-gitlab)) instalado y con al menos una cuenta configurada (`Settings → Version Control → GitLab → Add account…`). En IDEA Ultimate viene bundleado; en WebStorm/PyCharm/GoLand/Rider hay que instalarlo a mano desde Marketplace.
+- Plugin de Git activado (viene bundleado y habilitado por defecto en todos los IDEs de JetBrains).
+- Personal Access Token de GitLab con scopes `api` + `read_repository`.
 
-  <kbd>Settings/Preferences</kbd> > <kbd>Plugins</kbd> > <kbd>Marketplace</kbd> > <kbd>Search for "gitlab-pipeline"</kbd> >
-  <kbd>Install</kbd>
+## Instalación (manual, mientras no está publicado en Marketplace)
 
-- Using JetBrains Marketplace:
+1. Descarga el `gitlab-pipeline-watcher-X.Y.Z.zip` desde [Releases](https://github.com/danielalejandroamaro/gitlab-pipeline/releases).
+2. En el IDE: `Settings (Ctrl+Alt+S)` → `Plugins` → engranaje arriba a la derecha → `Install plugin from disk…` → selecciona el zip.
+3. Reinicia cuando lo pida.
 
-  Go to [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID) and install it by clicking the <kbd>Install to ...</kbd> button in case your IDE is running.
+## Configuración
 
-  You can also download the [latest release](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID/versions) from JetBrains Marketplace and install it manually using
-  <kbd>Settings/Preferences</kbd> > <kbd>Plugins</kbd> > <kbd>⚙️</kbd> > <kbd>Install plugin from disk...</kbd>
+Cero configuración propia. El plugin lee:
 
-- Manually:
+- Cuentas + tokens del plugin oficial GitLab (`GitLabAccountManager.accountsState` + `findCredentials(account)`).
+- El primer remoto git del proyecto cuyo host coincida con alguna de esas cuentas (fallback a `origin`).
 
-  Download the [latest release](https://github.com/danielalejandroamaro/gitlab-pipeline/releases/latest) and install it manually using
-  <kbd>Settings/Preferences</kbd> > <kbd>Plugins</kbd> > <kbd>⚙️</kbd> > <kbd>Install plugin from disk...</kbd>
+Si el plugin no detecta el proyecto en GitLab, el tool window lo dice explícitamente ("No GitLab account configured for X" / "Could not resolve project X on Y").
 
+## Cómo funciona internamente
 
----
-Plugin based on the [IntelliJ Platform Plugin Template][template].
+| Componente | Archivo | Rol |
+| --- | --- | --- |
+| `GitLabAuthBridge` | `auth/GitLabAuthBridge.kt` | Lee cuentas y tokens del plugin oficial; matchea remoto ↔ cuenta por host. |
+| `GitLabApiClient` | `api/GitLabApiClient.kt` | Cliente HTTP v4 sobre `HttpRequests` con header `PRIVATE-TOKEN`. |
+| `GitLabPipelineService` | `services/GitLabPipelineService.kt` | Project-level service con `StateFlow<State>`; `refresh()`, `onPushDetected()`, `followTag()`. |
+| `PipelinePushListener` | `git/PipelinePushListener.kt` | Suscrito al topic `git4idea.push.GitPushListener`. |
+| `PipelineToolWindowFactory` | `toolWindow/PipelineToolWindowFactory.kt` | Tabla de pipelines. |
+| `PipelineStatusBarWidget` | `statusBar/PipelineStatusBarWidget.kt` | Widget animado en la status bar. |
+| `GitLabCiDetector` + `PipelineWatcherActivity` | `services/`, `startup/` | Activación/desactivación condicional por `.gitlab-ci.yml`. |
 
-[template]: https://github.com/JetBrains/intellij-platform-plugin-template
-[docs:plugin-description]: https://plugins.jetbrains.com/docs/intellij/plugin-user-experience.html#plugin-description-and-presentation
+El polling tras push hace snapshot del id máximo de tag-pipeline conocido y busca uno con `id` mayor durante ~10 min (cada 2 s los primeros 5 intentos, después cada 10 s). Una vez encontrado, lee el pipeline cada 8 s hasta estado terminal.
+
+## Limitaciones conocidas
+
+- **Push desde la CLI** (fuera del IDE) no dispara el `GitPushListener`, así que el follow automático no se activa. Workaround: pulsar Refresh en el tool window. Iteración futura: poll periódico con `Alarm` cuando el tool window esté visible.
+- **Identificación del tag pushed**: `GitPushRepoResult` solo expone branch-level info de forma fiable, así que en vez de leer el tag del result, snapshoteamos el id máximo de tag-pipeline y buscamos uno nuevo en GitLab. Funciona pero asume que el push y el pipeline-trigger en GitLab ocurren dentro de la ventana de polling.
+
+## Desarrollo
+
+```bash
+# Build del zip distribuible
+./gradlew buildPlugin
+# Resultado en: build/distributions/gitlab-pipeline-watcher-<version>.zip
+
+# Tests
+./gradlew test
+
+# Arrancar un IDE sandbox con el plugin cargado
+./gradlew runIde
+```
+
+Stack: Kotlin 2.1, IntelliJ Platform Gradle Plugin 2.16, JDK 21 (probado con Microsoft OpenJDK 21).
+
+Notas de build:
+
+- `instrumentCode = false` en `build.gradle.kts` — no hay `.form` ni `@NotNull` que instrumentar, y además sortea un bug de IPP 2.16 que en JDKs no-JBR busca `$JAVA_HOME\Packages` y peta.
+- Dependencias declaradas con la sintaxis moderna `<dependencies><plugin id="..."/></dependencies>` en lugar de la legacy `<depends>` — evita un warning stale del Plugin Manager UI en 2026.1.
+
+## Licencia
+
+Este plugin **no está afiliado, respaldado, patrocinado ni aprobado por GitLab Inc.** GitLab es marca registrada de GitLab Inc.
+
+## Créditos
+
+Plugin construido sobre el [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template) de JetBrains.
