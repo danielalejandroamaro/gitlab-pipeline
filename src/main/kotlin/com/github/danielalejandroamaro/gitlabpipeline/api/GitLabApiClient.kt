@@ -30,8 +30,14 @@ class GitLabApiClient(
             .getOrNull()
     }
 
-    /** Recent pipelines (default 20, newest first). */
-    fun listPipelines(projectId: Long, perPage: Int = 20): List<Pipeline> {
+    /**
+     * Recent pipelines (default 20, newest first).
+     *
+     * Returns `null` on transient failure (network error, 5xx, parse error) so the caller can
+     * tell apart "GitLab says zero pipelines" from "we couldn't reach GitLab" and avoid
+     * blanking the UI on every blip.
+     */
+    fun listPipelines(projectId: Long, perPage: Int = 20): List<Pipeline>? {
         val url = "$serverUrl/api/v4/projects/$projectId/pipelines?per_page=$perPage&order_by=id&sort=desc"
         return runCatching {
             val body = get(url)
@@ -52,7 +58,7 @@ class GitLabApiClient(
                 )
             }
         }.onFailure { logger.warn("listPipelines($projectId) failed: ${it.message}") }
-            .getOrDefault(emptyList())
+            .getOrNull()
     }
 
     /** Look for the newest pipeline whose ref matches the given tag (and tag==true). */
@@ -134,6 +140,21 @@ class GitLabApiClient(
             if (arr.size() < 100) break
         }
         return results
+    }
+
+    /**
+     * Raw job log. GitLab returns plain text (possibly empty/202 while the runner is provisioning).
+     * Used by the tool window log panel to stream what the runner is printing in real time.
+     */
+    fun jobTrace(projectId: Long, jobId: Long): String? {
+        val url = "$serverUrl/api/v4/projects/$projectId/jobs/$jobId/trace"
+        return runCatching {
+            HttpRequests.request(url)
+                .tuner { conn -> conn.setRequestProperty("PRIVATE-TOKEN", token) }
+                .accept("text/plain")
+                .readString()
+        }.onFailure { logger.warn("jobTrace($projectId,$jobId) failed: ${it.message}") }
+            .getOrNull()
     }
 
     private fun get(url: String): String =

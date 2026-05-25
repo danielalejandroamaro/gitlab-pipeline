@@ -45,6 +45,10 @@ class GitLabPipelineService(
         val stages: List<StageSummary> = emptyList(),
         /** Name of the stage that's currently running (first non-terminal one). null when no follow active. */
         val currentStage: String? = null,
+        /** True from the moment refresh() is invoked until refreshNow() returns. UI uses this to disable the Refresh button and show feedback. */
+        val isRefreshing: Boolean = false,
+        /** Epoch millis of the last completed refresh (manual or auto). 0 = never. */
+        val lastRefreshedAt: Long = 0L,
     )
 
     private val _state = MutableStateFlow(State(ciEnabled = GitLabCiDetector.hasCiFile(project)))
@@ -52,15 +56,71 @@ class GitLabPipelineService(
 
     private var followJob: Job? = null
 
+    init {
+        // Background auto-refresh so the tree picks up new pipelines / status transitions without
+        // the user touching the button. One `GET .../pipelines?per_page=20` per tick.
+        scope.launch(Dispatchers.IO) {
+            // First-time tick is immediate so the left-side indicator (which doesn't trigger any
+            // refresh of its own) has data within ~1 RTT of the project opening.
+            if (_state.value.ciEnabled) {
+                runCatching { refreshNow() }
+            }
+            while (true) {
+                delay(AUTO_REFRESH_INTERVAL_MS)
+                if (_state.value.ciEnabled && !_state.value.isRefreshing) {
+                    runCatching { refreshNow() }
+                }
+            }
+        }
+    }
+
+    /** Cached client + project id after the first successful resolve, so [fetchJobTrace] can hit the API without re-doing the lookup chain on every poll tick. */
+    @Volatile private var cachedClient: GitLabApiClient? = null
+    @Volatile private var cachedProjectId: Long? = null
+
+    /** Trace text for a single job, or null if the API call fails / the service isn't initialised yet. */
+    fun fetchJobTrace(jobId: Long): String? {
+        val client = cachedClient ?: return null
+        val pid = cachedProjectId ?: return null
+        return client.jobTrace(pid, jobId)
+    }
+
+    /**
+     * Jobs for an arbitrary pipeline (not just the followed one). Used by the tool window tree
+     * to lazy-load children when the user expands a pipeline node. Returns null if the service
+     * hasn't done its first successful refresh yet (no cached client).
+     */
+    fun fetchJobs(pipelineId: Long): List<com.github.danielalejandroamaro.gitlabpipeline.model.Job>? {
+        val client = cachedClient ?: return null
+        val pid = cachedProjectId ?: return null
+        return client.listJobs(pid, pipelineId)
+    }
+
     /** Re-check `.gitlab-ci.yml` presence (called from VFS listener / refresh). */
     fun recheckCi() {
         _state.value = _state.value.copy(ciEnabled = GitLabCiDetector.hasCiFile(project))
     }
 
-    /** Manual refresh from the tool window. */
+    /**
+     * Manual refresh from the tool window. Always flips `isRefreshing` true→false so the
+     * StateFlow emits even when the fetched pipelines list is structurally identical to the
+     * previous one (without this, `MutableStateFlow` dedups equal values and the Refresh
+     * button looks broken — "funciona a veces").
+     */
     fun refresh() {
         if (!_state.value.ciEnabled) return
-        scope.launch(Dispatchers.IO) { refreshNow() }
+        if (_state.value.isRefreshing) return
+        _state.value = _state.value.copy(isRefreshing = true)
+        scope.launch(Dispatchers.IO) {
+            try {
+                refreshNow()
+            } finally {
+                _state.value = _state.value.copy(
+                    isRefreshing = false,
+                    lastRefreshedAt = System.currentTimeMillis(),
+                )
+            }
+        }
     }
 
     private fun refreshNow(): Pair<GitLabApiClient, Long>? {
@@ -94,10 +154,19 @@ class GitLabPipelineService(
             )
             return null
         }
+        cachedClient = client
+        cachedProjectId = projectId
         val pipelines = client.listPipelines(projectId)
+        if (pipelines == null) {
+            // Transient API failure — keep the previous list so the tool window doesn't flash empty
+            // on every blip and the user doesn't lose their tree expansion / cached jobs.
+            logger.info("listPipelines transient failure during refresh; keeping previous list")
+            return client to projectId
+        }
         _state.value = _state.value.copy(
             errorMessage = null,
             pipelines = pipelines,
+            lastRefreshedAt = System.currentTimeMillis(),
         )
         return client to projectId
     }
@@ -111,18 +180,33 @@ class GitLabPipelineService(
         if (!_state.value.ciEnabled) return
         followJob?.cancel()
         followJob = scope.launch(Dispatchers.IO) {
-            val ctx = refreshNow() ?: return@launch
-            val (client, projectId) = ctx
+            // Capture the baseline BEFORE refreshing. If a recent auto-refresh already pulled in
+            // the just-pushed pipeline, the refreshed list would otherwise raise our baseline to
+            // include it and we'd wait forever for an even-newer one.
             val baselineLatestTagPipelineId = _state.value.pipelines
                 .filter { it.tag }
                 .maxOfOrNull { it.id } ?: 0L
+            val ctx = refreshNow() ?: return@launch
+            val (client, projectId) = ctx
+
+            // GitLab's pipeline-creation isn't instantaneous after a push lands — the runner
+            // takes a few seconds to materialize the pipeline row. Pause before polling so we
+            // don't fire a burst of `listPipelines` calls against a pipeline that doesn't yet
+            // exist.
+            delay(PUSH_INITIAL_DELAY_MS)
 
             var newPipeline: Pipeline? = null
-            repeat(60) { attempt ->
-                val candidates = client.listPipelines(projectId, perPage = 10)
+            // Ramp: 1s × 20 (≈20s after the initial delay) → 2s × 20 (≈40s) → 5s × 60 (≈5min).
+            repeat(100) { attempt ->
+                val candidates = client.listPipelines(projectId, perPage = 10).orEmpty()
                 newPipeline = candidates.firstOrNull { it.tag && it.id > baselineLatestTagPipelineId }
                 if (newPipeline != null) return@repeat
-                delay(if (attempt < 5) 2_000L else 10_000L)
+                val sleep = when {
+                    attempt < 20 -> 1_000L
+                    attempt < 40 -> 2_000L
+                    else -> 5_000L
+                }
+                delay(sleep)
             }
             val started = newPipeline ?: return@launch
             val tagName = started.ref ?: "(unknown)"
@@ -160,12 +244,20 @@ class GitLabPipelineService(
             val ctx = refreshNow() ?: return@launch
             val (client, projectId) = ctx
 
-            // Poll up to ~10 minutes for the pipeline to appear.
+            // Same "give the runner a couple of seconds" preamble as onPushDetected.
+            delay(PUSH_INITIAL_DELAY_MS)
+
+            // Same fast-then-slow ramp as onPushDetected.
             var pipeline: Pipeline? = null
-            repeat(60) { attempt ->
+            repeat(100) { attempt ->
                 pipeline = client.findPipelineForTag(projectId, tagName)
                 if (pipeline != null) return@repeat
-                delay(if (attempt < 5) 2_000L else 10_000L)
+                val sleep = when {
+                    attempt < 20 -> 1_000L
+                    attempt < 40 -> 2_000L
+                    else -> 5_000L
+                }
+                delay(sleep)
             }
             if (pipeline == null) {
                 notify(MyBundle["notification.pipelineNotFound", tagName], NotificationType.WARNING)
@@ -208,7 +300,7 @@ class GitLabPipelineService(
                 _state.value = _state.value.copy(following = null, followingTag = null, currentStage = null)
                 break
             }
-            delay(8_000L)
+            delay(3_000L)
         }
     }
 
@@ -253,5 +345,17 @@ class GitLabPipelineService(
 
     fun dispose() {
         scope.cancel()
+    }
+
+    companion object {
+        /** Cadence of the background auto-refresh of the pipelines list. */
+        private const val AUTO_REFRESH_INTERVAL_MS = 3_000L
+
+        /**
+         * Pause between detecting a push (or being told to `followTag`) and the first poll
+         * against GitLab. Runners aren't instantaneous — the pipeline row typically appears
+         * 1–3s after the push lands. Polling before that is just wasted requests.
+         */
+        private const val PUSH_INITIAL_DELAY_MS = 2_000L
     }
 }

@@ -29,6 +29,7 @@
             icon="AllIcons.Toolwindows.ToolWindowBuild"
             factoryClass="com.github.danielalejandroamaro.gitlabpipeline.toolWindow.PipelineToolWindowFactory"/>
         <postStartupActivity implementation="com.github.danielalejandroamaro.gitlabpipeline.startup.PipelineWatcherActivity"/>
+        <postStartupActivity implementation="com.github.danielalejandroamaro.gitlabpipeline.startup.LeftIndicatorMounter"/>
         <notificationGroup id="GitLab Pipeline Watcher" displayType="BALLOON"/>
         <statusBarWidgetFactory
             id="GitLabPipelineStatusBarWidget"

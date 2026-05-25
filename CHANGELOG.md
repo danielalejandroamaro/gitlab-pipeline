@@ -2,6 +2,65 @@
 
 # gitlab-pipeline Changelog
 
+## [0.0.8] - 2026-05-25
+
+Copia rápida de tags desde el tree.
+
+- **Ícono de copiar inline en los rows de pipelines-tag** — en cada nodo raíz del árbol cuya `Pipeline.tag == true`, el renderer (`PipelineTreeRenderer`) dibuja un `AllIcons.Actions.Copy` al extremo derecho del cell. El espacio se reserva extendiendo `getPreferredSize().width` (icon width + padding) para que JTree no clippe el ícono, y se pinta en `paintComponent` por encima del area reservada. Click izquierdo en esa zona (hit-test contra `tree.getPathBounds(path).width - iconWidth - 4`) copia `pipeline.ref` al portapapeles vía `CopyPasteManager.getInstance().setContents(StringSelection(...))`. No se desplaza el botón Refresh — sigue donde estaba.
+- **Menú contextual (click-derecho) en el tree** — `JPopupMenu` que se arma según el row clickeado:
+  - **Pipeline-tag:** "Copiar tag: \<ref\>" (con ícono `Actions.Copy`), separador, "Copiar ID #\<id\>", "Copiar URL", "Abrir en navegador".
+  - **Pipeline no-tag:** "Copiar ID", "Copiar ref: \<branch\>", "Copiar URL", "Abrir en navegador".
+  - **Job:** "Copiar nombre: \<name\>", "Copiar URL del job", "Abrir job en navegador".
+  - `isPopupTrigger` se chequea en `mousePressed` Y `mouseReleased` para que el menú salga tanto en Windows (release) como en Linux (press). El row se selecciona antes de mostrar el menú para que el usuario vea sobre qué está actuando.
+- **Notificación de confirmación** — cualquier acción de copia (inline o desde el menú) dispara una notificación informacional en el grupo "GitLab Pipeline Watcher" diciendo "Copiado al portapapeles: \<qué\>". Sin balloons intrusivos, solo el toast estándar del IDE.
+- **Tooltip explicativo en rows de tag** — el renderer pone `toolTipText = "Click en el ícono ⧉ para copiar el tag (\<ref\>); click-derecho para más opciones"` para que el ícono no quede sin explicación.
+
+## [0.0.7] - 2026-05-25
+
+Hot loop: auto-refresh, feedback de botón y push detection con runner-aware delay.
+
+- **Auto-refresh cada 3s del listado de pipelines** — `GitLabPipelineService` ahora abre, en su `init`, un loop background (`scope.launch(Dispatchers.IO)`) que ejecuta `refreshNow()` cada 3s mientras haya `.gitlab-ci.yml`. Primer tick es inmediato para que el indicador izquierdo tenga datos sin esperar a abrir el tool window. Resuelve "no se actualiza con la frecuencia que me gustaría" — antes solo se refrescaba en push de tag o click manual.
+- **Botón Refresh: feedback + emite siempre** — el `MutableStateFlow` deduplica valores estructuralmente iguales, así que un `refresh()` que devolvía la misma lista quedaba como no-op y el botón "funcionaba a veces". Ahora `State` lleva dos campos nuevos: `isRefreshing: Boolean` y `lastRefreshedAt: Long`. `refresh()` flipa `isRefreshing` antes del fetch y lo revierte + bumpea `lastRefreshedAt` en `finally`, garantizando 2+ emisiones por click incluso si el listado no cambió. En el tool window el botón se desactiva durante el fetch y la status label muestra `· actualizado HH:mm:ss`.
+- **Children del treeview se mantienen al día (pipelines NO-followed)** — nuevo loop en `PipelinePanel` (`jobsRefreshLoop`, cada 3s) que recorre los nodos pipeline expandidos por el usuario, excluye el seguido (sus jobs ya vienen via `state.stages`) y los terminales (no cambian), y para los restantes llama `service.fetchJobs(id)`, sustituye los `JobRow` cacheados y re-expande el nodo preservando la posición. Antes los jobs se cacheaban al primer expand y se quedaban congelados.
+- **`GitLabApiClient.listPipelines` ahora retorna `List<Pipeline>?`** — fallos transitorios (timeout, 5xx, parse error) devuelven `null` en vez de `emptyList()`. `refreshNow()` lo usa para distinguir "GitLab respondió 0 pipelines" de "no llegamos a GitLab" y, en el segundo caso, no clobera la lista existente (antes la UI flasheaba vacía en cada blip de red, perdiendo el cache de jobs y la expansión).
+- **Push detection: delay inicial + baseline pre-refresh** — dos arreglos en `onPushDetected()` / `followTag()`:
+  1. `delay(2_000)` **antes** de empezar el polling. El runner tarda 1–3s en materializar la fila del pipeline en GitLab; polear antes era pegarle a un endpoint con la respuesta vieja N veces seguidas.
+  2. `baselineLatestTagPipelineId` se snapshotea **antes** de `refreshNow()`. Con el auto-refresh nuevo, en el momento en que llega el push-detection el listado podría ya incluir el pipeline nuevo y el baseline lo capturaría — entonces el polling esperaría a uno *aún* más nuevo y nunca terminaría. Snapshot pre-refresh = baseline correcto, y como `refreshNow()` corre antes del polling, si el pipeline ya está allí lo detectamos en el primer attempt.
+  3. Primera fase del ramp sube de 500ms → 1s × 20 (menos hammering durante la ventana en que el pipeline igual no existe). Total del ramp queda en ~6 min, igual que antes.
+
+## [0.0.6] - 2026-05-25
+
+- **Status bar widget: prefer-left, fallback-right-last** — el indicador del panel izquierdo (`LeftPipelineIndicator`, montado vía reflexión en `IdeStatusBarImpl.leftPanel` por `LeftIndicatorMounter`) ahora **remueve el widget derecho** del status bar (`statusBar.removeWidget(WIDGET_ID)`) cuando logra montarse en el panel izquierdo, evitando que aparezcan dos indicadores duplicados. Si la reflexión falla en una versión futura del IDE, el `statusBarWidgetFactory` cae a `order="last"` (antes `before NavBar, first`) → el widget aparece en el extremo derecho del status bar (i.e. "primero" leído derecha-a-izquierda). Resumen del nuevo orden de preferencia: 1) leftmost del panel izquierdo, 2) rightmost del panel derecho.
+- **Tool window: tabla → tree view** — la `JBTable` de pipelines (columnas ID/Ref/SHA/Status/Source) se reemplaza por un `com.intellij.ui.treeStructure.Tree` con `DefaultTreeModel`:
+  - **Nodos raíz** = pipelines. Título: `ref` cuando `tag == true`, si no `#<id>`. Icono: bolita de status (verde/rojo/gris/ámbar) o `Execute`/`Pause` para estados activos. Sufijo gris = `source` (`push`, `web`, `schedule`, …) por defecto `"push"` cuando GitLab no devuelve `source`. Para pipelines de rama (no-tag) se muestra además `· <ref>` para no perder el nombre de la rama.
+  - **Nodos hijo** = jobs del pipeline. Etiqueta `<stage> → <name>` + duración `(Ns)` en gris.
+  - **Carga lazy** — al expandir un pipeline distinto del "followed", se llama `service.fetchJobs(pipelineId)` en `Dispatchers.IO` y se sustituye el placeholder `cargando jobs…` por los jobs reales. Se cachea por `pipelineId` para no re-pedir en re-expansiones ni en los rebuilds que produce el `state.collect` (cada 3s mientras se sigue un pipeline).
+  - **Followed pipeline auto-feed** — el árbol no espera al expand para el pipeline en curso: `render()` toma `state.stages.flatMap { it.jobs }` y popula la cache, así los jobs aparecen y cambian de bolita en tiempo real con el polling existente.
+  - **Estado de expansión persistido** entre rebuilds — `snapshotExpansion()` guarda los `pipelineId` expandidos antes de `treeModel.reload()` y re-aplica `tree.expandPath(...)` después, así el ticking del follow no colapsa lo que el usuario haya abierto.
+  - **Doble clic** abre el `web_url` en el navegador, igual para nodos de pipeline y de job (los jobs sí tienen `web_url` propio en la API GitLab).
+- **`GitLabPipelineService.fetchJobs(pipelineId)`** — nuevo método público. Reusa el `cachedClient`/`cachedProjectId` que ya se llenaba en `refreshNow()` para `fetchJobTrace`, así el tool window puede pedir jobs de pipelines arbitrarios (no sólo el seguido) sin re-resolver remoto/cuenta/token.
+
+## [0.0.5] - 2026-05-25
+
+- **Indicador pegado al inicio del status bar (antes del NavBar/breadcrumb)** — el `<statusBarWidgetFactory>` no llega al panel izquierdo del status bar; añado un `LeftPipelineIndicator` (icono-only `JBLabel` con tooltip + click) que se inyecta vía reflexión en `IdeStatusBarImpl.leftPanel` en posición 0 (antes del NavBar) desde `LeftIndicatorMounter` (`ProjectActivity`). Si el campo `leftPanel` no se encuentra (versión nueva del IDE que lo renombre), cae al método público deprecado `StatusBar.addCustomIndicationComponent` que añade al panel izquierdo pero al final. El indicador comparte estado y bolitas/spinner con el widget de la derecha — son dos vistas del mismo `GitLabPipelineService.state`. Motivación: cuando el breadcrumb crece (paths largos), el widget de la derecha se desplaza y deja de ser glanceable; el izquierdo mantiene posición fija.
+
+## [0.0.4] - 2026-05-25
+
+- **Widget intenta posicionarse antes del NavBar/breadcrumb** — `order="before NavBar, first"` en `plugin.xml`. Si el platform respeta el orden cross-zona (izquierda/derecha), el widget aparecerá adyacente al breadcrumb por su lado izquierdo; si no, queda como `first` en la zona derecha (sin regresión visual respecto a 0.0.3). El widget id del NavBar oficial es `"NavBar"` (`NavBarStatusBarWidgetFactory`).
+
+## [0.0.3] - 2026-05-25
+
+Reactividad y observabilidad.
+
+### Cambios
+
+- **Status bar widget pegado a la izquierda** — `order="last"` → `order="first"` en `plugin.xml`. Se ve antes que el resto de widgets del platform.
+- **Detección de pipeline tras push acotada** — el polling de `onPushDetected` / `followTag` arranca a **500 ms × 20 intentos** (≈10 s de detección sub-segundo), después 2 s × 20, después 5 s. Antes era 2 s × 5 + 10 s. Reacción típica baja de "≥10 s" a "<1 s en caso bueno".
+- **Follow loop más vivo** — el `getPipeline` + `listJobs` de `followUntilTerminal` pasa de 8 s a **3 s** por tick (UI se siente actualizada).
+- **Animator → Swing Timer** — `PipelineStatusBarWidget` ya no usa `com.intellij.util.ui.Animator`: en 2026.1 logueaba `java.lang.Throwable: Do not use repeatable animators without an explicit lifetime scope` desde el constructor. Reemplazado por `javax.swing.Timer(100ms)` que itera `spinnerFrame` y llama `myStatusBar?.updateWidget(ID())`. Sin dependencias de IntelliJ internals que se mueven entre versiones.
+- **Panel "Runner log" en el tool window** — `LiveLogsPanel` debajo de la franja de stages. Muestra título "Runner log — <stage> → <job> (#<id>)" y un `JTextArea` monospace con el contenido del job en curso. Se hace visible solo cuando hay un job RUNNING; oculto si no. Polling cada **3 s** vía `javax.swing.Timer` mientras el job esté corriendo; congela al terminar. Auto-scroll al fondo solo si el usuario ya estaba en el fondo (no roba la posición si el usuario está leyendo arriba). Endpoint: `GET /api/v4/projects/:id/jobs/:job_id/trace` (texto plano).
+- **`GitLabApiClient.jobTrace(projectId, jobId)`** — nuevo método. Cliente cacheado en `GitLabPipelineService.cachedClient/cachedProjectId` tras el primer `refreshNow` exitoso, así el panel puede llamar `service.fetchJobTrace(jobId)` sin re-resolver remoto/cuenta/token cada 3 s.
+
 ## [0.0.2] - 2026-05-25
 
 Feedback visual y soporte de pipelines multi-etapa. La status bar ahora distingue de un vistazo verde/rojo y gira mientras corre; el tool window enseña la franja de stages y la notificación final desglosa qué etapa pasó y cuál falló.

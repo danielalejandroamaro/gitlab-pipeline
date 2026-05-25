@@ -13,7 +13,6 @@ import com.intellij.openapi.wm.StatusBarWidget
 import com.intellij.openapi.wm.StatusBarWidgetFactory
 import com.intellij.openapi.wm.impl.status.EditorBasedWidget
 import com.intellij.util.Consumer
-import com.intellij.util.ui.Animator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,6 +22,7 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.awt.event.MouseEvent
 import javax.swing.Icon
+import javax.swing.Timer as SwingTimer
 
 class PipelineStatusBarWidgetFactory : StatusBarWidgetFactory {
     override fun getId(): String = WIDGET_ID
@@ -47,20 +47,18 @@ class PipelineStatusBarWidget(
     private var currentStage: String? = null
     private var stagesSummary: String = ""
 
-    @Volatile private var spinnerFrame: Int = 0
+    private var spinnerFrame: Int = 0
 
-    /** Platform animator that drives [spinnerFrame] and forces a widget repaint each tick. */
-    private val spinnerAnimator: Animator = object : Animator(
-        "GitLabPipelineSpinner",
-        SPINNER.size,
-        800,                   // cycle duration ms → ~100ms per frame
-        /* isRepeatable = */ true,
-    ) {
-        override fun paintNow(frame: Int, totalFrames: Int, cycle: Int) {
-            spinnerFrame = frame % SPINNER.size
-            myStatusBar?.updateWidget(ID())
-        }
-    }
+    /**
+     * Spinner driven by a Swing [Timer] — runs on EDT, no IntelliJ-API surface that has
+     * been wiggling between versions (the `com.intellij.util.ui.Animator` constructor in
+     * 2026.1 logs a "Do not use repeatable animators without an explicit lifetime scope"
+     * error and the signature isn't backwards-compatible across recent platform releases).
+     */
+    private val spinnerTimer: SwingTimer = SwingTimer(100) {
+        spinnerFrame = (spinnerFrame + 1) % SPINNER.size
+        myStatusBar?.updateWidget(ID())
+    }.apply { isRepeats = true }
 
     override fun ID(): String = PipelineStatusBarWidgetFactory.WIDGET_ID
 
@@ -82,9 +80,9 @@ class PipelineStatusBarWidget(
 
                 val animating = active != null && !active.status.isTerminal
                 if (animating) {
-                    if (spinnerAnimator.isDisposed.not() && !spinnerAnimator.isRunning) spinnerAnimator.resume()
+                    if (!spinnerTimer.isRunning) spinnerTimer.start()
                 } else {
-                    if (spinnerAnimator.isRunning) spinnerAnimator.suspend()
+                    if (spinnerTimer.isRunning) spinnerTimer.stop()
                 }
                 myStatusBar?.updateWidget(ID())
             }
@@ -120,8 +118,7 @@ class PipelineStatusBarWidget(
     override fun dispose() {
         subscription?.cancel()
         scope.cancel()
-        if (spinnerAnimator.isRunning) spinnerAnimator.suspend()
-        spinnerAnimator.dispose()
+        if (spinnerTimer.isRunning) spinnerTimer.stop()
         super<EditorBasedWidget>.dispose()
     }
 
