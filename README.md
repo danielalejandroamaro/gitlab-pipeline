@@ -1,111 +1,111 @@
 # GitLab Pipeline Watcher
 
-Plugin para IDEs de JetBrains (IntelliJ IDEA, WebStorm, PyCharm, GoLand, Rider, …) que sigue pipelines de GitLab CI desde dentro del IDE reutilizando la autenticación del plugin oficial de JetBrains [GitLab](https://plugins.jetbrains.com/plugin/22857-gitlab). Funciona con instancias self-hosted sin configurar nada propio: si ya tienes una cuenta en `Settings → Version Control → GitLab`, este plugin la reusa.
+JetBrains IDE plugin (IntelliJ IDEA, WebStorm, PyCharm, GoLand, Rider, …) that follows GitLab CI pipelines from inside the IDE, reusing the authentication of the official JetBrains [GitLab plugin](https://plugins.jetbrains.com/plugin/22857-gitlab). Works with self-hosted GitLab instances without any plugin-specific configuration: if you already have an account set up under `Settings → Version Control → GitLab`, this plugin reuses it.
 
 ![Build](https://github.com/danielalejandroamaro/gitlab-pipeline/workflows/Build/badge.svg)
 
-## Qué hace
+## What it does
 
-- **Tool window "GitLab Pipelines"** (abajo del IDE) con tabla iconada de los pipelines recientes: status, ref, sha corto, source. Doble clic abre el pipeline en el navegador.
-- **Status bar widget animado** mientras hay un pipeline en `running`: spinner de 8 frames usando los iconos nativos de IntelliJ; al pasar a estado terminal el icono queda fijo (tick verde, cruz roja, cancel, skipped…). Tooltip con ID, status, ref y sha. Click → abre el pipeline.
-- **Detección de push de tag** vía `git4idea.push.GitPushListener`: cualquier push exitoso desde el IDE arranca un seguimiento que polea GitLab hasta encontrar el pipeline disparado por el tag y lo sigue hasta el final. Al iniciar el seguimiento el tool window se abre solo y aparece una notificación; al terminar, otra notificación con duración y resultado.
-- **Auto-desactivación si no hay `.gitlab-ci.yml`**: si el proyecto no tiene el archivo, el tool window y el widget no aparecen. Si lo creas o lo borras en caliente, el plugin reacciona vía `AsyncFileListener` sin reiniciar el IDE.
+- **"GitLab Pipelines" tool window** (bottom of the IDE) with an icon-tagged tree of recent pipelines: status, ref, short sha, source. Double-click opens the pipeline in your browser.
+- **Animated status bar widget** while a pipeline is `running`: an 8-frame spinner using IntelliJ's native icons; when the pipeline reaches a terminal state the icon freezes (green tick, red cross, cancel, skipped…). Tooltip with ID, status, ref and sha. Click → opens the pipeline.
+- **Tag-push detection** via `git4idea.push.GitPushListener`: any successful push from inside the IDE starts a follow loop that polls GitLab until it finds the pipeline triggered by the tag, then follows it through to terminal. The tool window auto-opens at the start of a follow and you get a notification; on terminal another notification shows duration and result.
+- **Auto-disabled when there is no `.gitlab-ci.yml`**: if the project doesn't have the file, the tool window and the widget stay hidden. If you create or delete the file at runtime, the plugin reacts via `AsyncFileListener` without restarting the IDE.
 
-## Requisitos
+## Requirements
 
-- IDE basado en IntelliJ Platform ≥ build `252` (IDEA / WebStorm / PyCharm / etc. 2025.2 o superior).
-- **Plugin oficial de GitLab** ([Marketplace 22857](https://plugins.jetbrains.com/plugin/22857-gitlab)) instalado y con al menos una cuenta configurada (`Settings → Version Control → GitLab → Add account…`). En IDEA Ultimate viene bundleado; en WebStorm/PyCharm/GoLand/Rider hay que instalarlo a mano desde Marketplace.
-- Plugin de Git activado (viene bundleado y habilitado por defecto en todos los IDEs de JetBrains).
-- Personal Access Token de GitLab con scopes `api` + `read_repository`.
+- IntelliJ Platform-based IDE, build `252` or later (IDEA / WebStorm / PyCharm / etc., version 2025.2+).
+- **Official GitLab plugin** ([Marketplace 22857](https://plugins.jetbrains.com/plugin/22857-gitlab)) installed and with at least one account configured (`Settings → Version Control → GitLab → Add account…`). On IDEA Ultimate it's bundled; on WebStorm/PyCharm/GoLand/Rider you install it manually from the Marketplace.
+- Git plugin enabled (bundled and enabled by default on every JetBrains IDE).
+- A GitLab Personal Access Token with `api` + `read_repository` scopes.
 
-## Instalación (manual, mientras no está publicado en Marketplace)
+## Installation (manual, while not yet published on the Marketplace)
 
-1. Descarga el `gitlab-pipeline-watcher-X.Y.Z.zip` desde [Releases](https://github.com/danielalejandroamaro/gitlab-pipeline/releases).
-2. En el IDE: `Settings (Ctrl+Alt+S)` → `Plugins` → engranaje arriba a la derecha → `Install plugin from disk…` → selecciona el zip.
-3. Reinicia cuando lo pida.
+1. Download `gitlab-pipeline-watcher-X.Y.Z.zip` from [Releases](https://github.com/danielalejandroamaro/gitlab-pipeline/releases).
+2. In the IDE: `Settings (Ctrl+Alt+S)` → `Plugins` → cog icon top-right → `Install plugin from disk…` → pick the zip.
+3. Restart when prompted.
 
-## Configuración
+## Configuration
 
-Cero configuración propia. El plugin lee:
+Zero plugin-specific configuration. The plugin reads:
 
-- Cuentas + tokens del plugin oficial GitLab (`GitLabAccountManager.accountsState` + `findCredentials(account)`).
-- El primer remoto git del proyecto cuyo host coincida con alguna de esas cuentas (fallback a `origin`).
+- Accounts + tokens from the official GitLab plugin (`GitLabAccountManager.accountsState` + `findCredentials(account)`).
+- The first git remote in the project whose host matches one of those accounts (fallback: `origin`).
 
-Si el plugin no detecta el proyecto en GitLab, el tool window lo dice explícitamente ("No GitLab account configured for X" / "Could not resolve project X on Y").
+If the plugin can't locate the project on GitLab, the tool window says so explicitly ("No GitLab account configured for X" / "Could not resolve project X on Y").
 
-## Cómo funciona internamente
+## How it works internally
 
-| Componente | Archivo | Rol |
+| Component | File | Role |
 | --- | --- | --- |
-| `GitLabAuthBridge` | `auth/GitLabAuthBridge.kt` | Lee cuentas y tokens del plugin oficial; matchea remoto ↔ cuenta por host. |
-| `GitLabApiClient` | `api/GitLabApiClient.kt` | Cliente HTTP v4 sobre `HttpRequests` con header `PRIVATE-TOKEN`. |
-| `GitLabPipelineService` | `services/GitLabPipelineService.kt` | Project-level service con `StateFlow<State>`; `refresh()`, `onPushDetected()`, `followTag()`. |
-| `PipelinePushListener` | `git/PipelinePushListener.kt` | Suscrito al topic `git4idea.push.GitPushListener`. |
-| `PipelineToolWindowFactory` | `toolWindow/PipelineToolWindowFactory.kt` | Tabla de pipelines. |
-| `PipelineStatusBarWidget` | `statusBar/PipelineStatusBarWidget.kt` | Widget animado en la status bar. |
-| `GitLabCiDetector` + `PipelineWatcherActivity` | `services/`, `startup/` | Activación/desactivación condicional por `.gitlab-ci.yml`. |
+| `GitLabAuthBridge` | `auth/GitLabAuthBridge.kt` | Reads accounts and tokens from the official plugin; matches remote ↔ account by host. |
+| `GitLabApiClient` | `api/GitLabApiClient.kt` | HTTP v4 client on top of `HttpRequests` with `PRIVATE-TOKEN` header. |
+| `GitLabPipelineService` | `services/GitLabPipelineService.kt` | Project-level service with `StateFlow<State>`; `refresh()`, `onPushDetected()`, `followTag()`. |
+| `PipelinePushListener` | `git/PipelinePushListener.kt` | Subscribed to topic `git4idea.push.GitPushListener`. |
+| `PipelineToolWindowFactory` | `toolWindow/PipelineToolWindowFactory.kt` | Pipelines tree view. |
+| `PipelineStatusBarWidget` | `statusBar/PipelineStatusBarWidget.kt` | Animated status bar widget. |
+| `GitLabCiDetector` + `PipelineWatcherActivity` | `services/`, `startup/` | Conditional activation/deactivation based on `.gitlab-ci.yml`. |
 
-El polling tras push hace snapshot del id máximo de tag-pipeline conocido y busca uno con `id` mayor durante ~10 min (cada 2 s los primeros 5 intentos, después cada 10 s). Una vez encontrado, lee el pipeline cada 8 s hasta estado terminal.
+After a push, polling snapshots the maximum tag-pipeline id we know about and looks for one with a larger `id` for roughly 10 minutes (every 2 s for the first 5 attempts, then every 10 s). Once found, it reads the pipeline every 8 s until terminal.
 
-## Limitaciones conocidas
+## Known limitations
 
-- **Push desde la CLI** (fuera del IDE) no dispara el `GitPushListener`, así que el follow automático no se activa. Workaround: pulsar Refresh en el tool window. Iteración futura: poll periódico con `Alarm` cuando el tool window esté visible.
-- **Identificación del tag pushed**: `GitPushRepoResult` solo expone branch-level info de forma fiable, así que en vez de leer el tag del result, snapshoteamos el id máximo de tag-pipeline y buscamos uno nuevo en GitLab. Funciona pero asume que el push y el pipeline-trigger en GitLab ocurren dentro de la ventana de polling.
+- **CLI pushes** (outside the IDE) don't fire `GitPushListener`, so the automatic follow doesn't kick in. Workaround: hit Refresh in the tool window. Possible future iteration: periodic polling with `Alarm` while the tool window is visible.
+- **Identifying the pushed tag**: `GitPushRepoResult` only exposes branch-level info reliably, so instead of reading the tag off the result we snapshot the max tag-pipeline id and look for a newer one on GitLab. Works fine, but it does assume the push and the GitLab pipeline trigger happen within the polling window.
 
-## Desarrollo
+## Development
 
-### 📦 Dónde queda el `.zip`
+### 📦 Where the `.zip` ends up
 
 ```
 build\distributions\gitlab-pipeline-watcher-<version>.zip
 ```
 
-Es **siempre** ahí. Ruta absoluta típica en esta máquina: `C:\work\gitlab-pipeline\build\distributions\gitlab-pipeline-watcher-<version>.zip`. Para abrirla en Explorer sin pensarlo: `make open-dist` (o `make install`, que builda y abre la carpeta de una).
+**Always** there. Typical absolute path on this machine: `C:\work\gitlab-pipeline\build\distributions\gitlab-pipeline-watcher-<version>.zip`. To open it in Explorer without thinking: `make open-dist` (or `make install`, which builds and opens the folder in one go).
 
-### Comandos
+### Commands
 
 ```bash
 make                # build → build\distributions\gitlab-pipeline-watcher-<version>.zip
-make dev            # Sandbox IDE con el plugin precargado (no instala nada)
-make install        # Build + abre build\distributions\ en Explorer
-make rebuild        # Clean + build (zip fresco)
-make zip            # Imprime la ruta absoluta del .zip generado
-make open-dist      # Abre build\distributions\ en Explorer
-make help           # Lista todos los targets
+make dev            # Sandbox IDE with the plugin pre-loaded (does not install)
+make install        # Build + open build\distributions\ in Explorer
+make rebuild        # Clean + build (fresh zip)
+make zip            # Print the absolute path of the generated .zip
+make open-dist      # Open build\distributions\ in Explorer
+make help           # List every target
 ```
 
-Si prefieres gradle directo (con `JAVA_HOME` configurado):
+If you'd rather go straight to gradle (with `JAVA_HOME` configured):
 
 ```bash
 ./gradlew buildPlugin   # Output: build/distributions/gitlab-pipeline-watcher-<version>.zip
-./gradlew runIde        # Sandbox IDE con plugin cargado
+./gradlew runIde        # Sandbox IDE with the plugin loaded
 ./gradlew test          # Tests
 ```
 
-Stack: Kotlin 2.1, IntelliJ Platform Gradle Plugin 2.16, JDK 21 (probado con Microsoft OpenJDK 21).
+Stack: Kotlin 2.1, IntelliJ Platform Gradle Plugin 2.16, JDK 21 (tested with Microsoft OpenJDK 21).
 
-Notas de build:
+Build notes:
 
-- `instrumentCode = false` en `build.gradle.kts` — no hay `.form` ni `@NotNull` que instrumentar, y además sortea un bug de IPP 2.16 que en JDKs no-JBR busca `$JAVA_HOME\Packages` y peta.
-- Dependencias declaradas con la sintaxis moderna `<dependencies><plugin id="..."/></dependencies>` en lugar de la legacy `<depends>` — evita un warning stale del Plugin Manager UI en 2026.1.
+- `instrumentCode = false` in `build.gradle.kts` — there are no `.form` files or `@NotNull` to instrument, and it also sidesteps an IPP 2.16 bug that on non-JBR JDKs looks for `$JAVA_HOME\Packages` and crashes.
+- Dependencies declared with the modern `<dependencies><plugin id="..."/></dependencies>` syntax instead of legacy `<depends>` — avoids a stale Plugin Manager UI warning on 2026.1.
 
-## Licencia
+## License
 
-Publicado bajo **GNU AGPL v3** (texto completo en [`LICENSE`](LICENSE)).
+Released under the **GNU AGPL v3** (full text in [`LICENSE`](LICENSE)).
 
-Resumen práctico de qué te permite hacer AGPL v3:
+Practical summary of what AGPL v3 lets you do:
 
-- **Uso personal o interno de equipo**: libre. Instala, modifica, comparte con tu equipo sin pedir permiso.
-- **Fork público**: libre, siempre que tu fork también se publique bajo AGPL v3 y mantenga el aviso de copyright.
-- **Distribuir un derivado** (modificado o no): obligatorio publicar el código fuente del derivado bajo AGPL v3.
-- **Servir como SaaS / IDE remoto / Code With Me**: cuenta también como "distribución" en AGPL — si expones funcionalidad de este plugin a usuarios externos, debes publicar el fuente.
+- **Personal or internal team use**: free. Install, modify, share with your team without asking.
+- **Public fork**: free, as long as your fork is also published under AGPL v3 and keeps the copyright notice.
+- **Distributing a derivative work** (modified or not): you must publish the source code of the derivative under AGPL v3.
+- **Serving as SaaS / remote IDE / Code With Me**: this also counts as "distribution" under AGPL — if you expose this plugin's functionality to external users, you must publish the source.
 
-### Licencia comercial (dual licensing)
+### Commercial license (dual licensing)
 
-Si quieres usar este plugin **integrado en un producto cerrado**, **revenderlo**, **embeberlo en una solución comercial sin abrir tu código**, o de cualquier otro modo que AGPL v3 te prohíba — contacta a **danielalejandro.amaroramos@gmail.com** para negociar una licencia comercial separada.
+If you want to use this plugin **embedded in a closed-source product**, **resell it**, **bundle it into a commercial offering without opening your own code**, or otherwise do something AGPL v3 forbids — contact **danielalejandro.amaroramos@gmail.com** to negotiate a separate commercial license.
 
-Este plugin **no está afiliado, respaldado, patrocinado ni aprobado por GitLab Inc.** GitLab es marca registrada de GitLab Inc.
+This plugin is **not affiliated with, endorsed by, sponsored by, or approved by GitLab Inc.** GitLab is a registered trademark of GitLab Inc.
 
-## Créditos
+## Credits
 
-Plugin construido sobre el [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template) de JetBrains.
+Built on top of JetBrains' [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template).
