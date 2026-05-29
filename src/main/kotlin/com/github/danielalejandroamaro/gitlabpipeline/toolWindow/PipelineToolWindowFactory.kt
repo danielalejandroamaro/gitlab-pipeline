@@ -110,12 +110,20 @@ private class PipelinePanel(private val project: Project) {
                 }
 
                 if (e.clickCount == 2) {
-                    val url = when (data) {
-                        is PipelineRow -> data.pipeline.webUrl
-                        is JobRow -> data.job.webUrl
-                        else -> null
+                    when (data) {
+                        // Default double-click on a pipeline copies the version (= ref/tag/branch)
+                        // and surfaces a balloon. Navigation lives in the right-click menu.
+                        is PipelineRow -> {
+                            val version = data.pipeline.ref
+                            if (!version.isNullOrBlank()) {
+                                copyToClipboard(version, "version $version")
+                            }
+                        }
+                        is JobRow -> {
+                            val url = data.job.webUrl
+                            if (!url.isNullOrBlank()) BrowserUtil.browse(url)
+                        }
                     }
-                    if (!url.isNullOrBlank()) BrowserUtil.browse(url)
                 }
             }
         })
@@ -430,16 +438,17 @@ private class PipelineTreeRenderer : ColoredTreeCellRenderer() {
             is PipelineRow -> {
                 val p = data.pipeline
                 icon = iconFor(p.status)
-                val title = if (p.tag && !p.ref.isNullOrBlank()) p.ref!! else "#${p.id}"
-                append(title, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                // Format: "action/version  #id" — the version is the ref/tag/branch, so a double
+                // click can copy it directly without the user having to scan past the id first.
                 val action = p.source ?: "push"
-                append("  $action", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-                if (!p.tag && !p.ref.isNullOrBlank()) {
-                    append("  · ${p.ref}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-                }
+                val version = p.ref?.takeIf { it.isNotBlank() } ?: p.sha?.take(8) ?: "?"
+                append("$action/$version", SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                append("  #${p.id}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 if (p.tag && !p.ref.isNullOrBlank()) {
                     paintCopyIcon = true
-                    toolTipText = "Click en el ícono ⧉ para copiar el tag (${p.ref}); click-derecho para más opciones"
+                    toolTipText = "Doble click copia la versión (${p.ref}); click-derecho para navegar"
+                } else if (!p.ref.isNullOrBlank()) {
+                    toolTipText = "Doble click copia la versión (${p.ref}); click-derecho para navegar"
                 }
             }
             is JobRow -> {

@@ -6,6 +6,7 @@ import com.github.danielalejandroamaro.gitlabpipeline.auth.GitLabAuthBridge
 import com.github.danielalejandroamaro.gitlabpipeline.model.Pipeline
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
 import com.github.danielalejandroamaro.gitlabpipeline.model.StageSummary
+import com.github.danielalejandroamaro.gitlabpipeline.settings.PipelineSettings
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
@@ -58,16 +59,20 @@ class GitLabPipelineService(
 
     init {
         // Background auto-refresh so the tree picks up new pipelines / status transitions without
-        // the user touching the button. One `GET .../pipelines?per_page=20` per tick.
+        // the user touching the button. One `GET .../pipelines?per_page=20` per tick. When idle
+        // polling is OFF in settings, we still do the initial load and keep ticking while at least
+        // one known pipeline is non-terminal; the loop falls silent once everything settles.
         scope.launch(Dispatchers.IO) {
-            // First-time tick is immediate so the left-side indicator (which doesn't trigger any
-            // refresh of its own) has data within ~1 RTT of the project opening.
             if (_state.value.ciEnabled) {
                 runCatching { refreshNow() }
             }
             while (true) {
-                delay(AUTO_REFRESH_INTERVAL_MS)
-                if (_state.value.ciEnabled && !_state.value.isRefreshing) {
+                val settings = PipelineSettings.getInstance()
+                delay(settings.refreshIntervalMs)
+                if (!_state.value.ciEnabled || _state.value.isRefreshing) continue
+                val hasActive = _state.value.pipelines.any { !it.status.isTerminal } ||
+                    _state.value.following != null
+                if (settings.idlePollingEnabled || hasActive) {
                     runCatching { refreshNow() }
                 }
             }
@@ -77,6 +82,16 @@ class GitLabPipelineService(
     /** Cached client + project id after the first successful resolve, so [fetchJobTrace] can hit the API without re-doing the lookup chain on every poll tick. */
     @Volatile private var cachedClient: GitLabApiClient? = null
     @Volatile private var cachedProjectId: Long? = null
+
+    /**
+     * Tracks pipeline ids we've already announced (started/detected) so the auto-refresh loop
+     * doesn't re-fire a balloon every tick. Same for terminal — once we've notified that #X is
+     * SUCCESS/FAILED we don't notify again.
+     */
+    private val notifiedStartedIds = mutableSetOf<Long>()
+    private val notifiedTerminalIds = mutableSetOf<Long>()
+    /** False until the first successful list fetch lands. Suppresses notifications for the historic backlog at project open. */
+    @Volatile private var firstFetchSeeded = false
 
     /** Trace text for a single job, or null if the API call fails / the service isn't initialised yet. */
     fun fetchJobTrace(jobId: Long): String? {
@@ -163,12 +178,58 @@ class GitLabPipelineService(
             logger.info("listPipelines transient failure during refresh; keeping previous list")
             return client to projectId
         }
+        val previousById = _state.value.pipelines.associateBy { it.id }
         _state.value = _state.value.copy(
             errorMessage = null,
             pipelines = pipelines,
             lastRefreshedAt = System.currentTimeMillis(),
         )
+        emitListDeltaNotifications(pipelines, previousById)
         return client to projectId
+    }
+
+    /**
+     * Compare the freshly fetched pipeline list against the previous snapshot and surface balloon
+     * notifications for: (a) pipeline ids we've never seen → "started", (b) ids we'd previously
+     * seen non-terminal that now report a terminal status → "finished". Both paths short-circuit
+     * the first time around: at project open we seed [notifiedStartedIds] from the historic list
+     * so the user doesn't get a wall of balloons announcing yesterday's pipelines.
+     *
+     * The `followUntilTerminal` path emits its own richer breakdown for the currently-followed
+     * pipeline, so we suppress the terminal balloon here when this id matches the followed one to
+     * avoid double notifying.
+     */
+    private fun emitListDeltaNotifications(pipelines: List<Pipeline>, previousById: Map<Long, Pipeline>) {
+        if (!firstFetchSeeded) {
+            for (p in pipelines) {
+                notifiedStartedIds += p.id
+                if (p.status.isTerminal) notifiedTerminalIds += p.id
+            }
+            firstFetchSeeded = true
+            return
+        }
+        val followingId = _state.value.following?.id
+        for (p in pipelines) {
+            if (notifiedStartedIds.add(p.id)) {
+                val versionLabel = p.ref ?: p.sha?.take(8) ?: "?"
+                val source = p.source ?: "push"
+                notify(
+                    MyBundle["notification.pipelineDetected", p.id.toString(), source, versionLabel],
+                    NotificationType.INFORMATION,
+                )
+            }
+            if (p.status.isTerminal && p.id != followingId && notifiedTerminalIds.add(p.id)) {
+                val previousStatus = previousById[p.id]?.status
+                val wasAlreadyTerminal = previousStatus != null && previousStatus.isTerminal
+                if (wasAlreadyTerminal) continue
+                val durationLabel = p.duration?.let { "${it}s" } ?: "?"
+                notify(
+                    MyBundle["notification.pipelineTerminal", p.id.toString(), p.status.raw, durationLabel],
+                    if (p.status == PipelineStatus.SUCCESS) NotificationType.INFORMATION
+                    else NotificationType.ERROR,
+                )
+            }
+        }
     }
 
     /**
@@ -314,6 +375,9 @@ class GitLabPipelineService(
                     if (updated.status == PipelineStatus.SUCCESS) NotificationType.INFORMATION
                     else NotificationType.ERROR,
                 )
+                // Suppress the upcoming auto-refresh "terminal" balloon for this id — we just sent
+                // the richer one above.
+                notifiedTerminalIds += updated.id
                 _state.value = _state.value.copy(following = null, followingTag = null, currentStage = null)
                 break
             }
@@ -375,9 +439,6 @@ class GitLabPipelineService(
     }
 
     companion object {
-        /** Cadence of the background auto-refresh of the pipelines list. */
-        private const val AUTO_REFRESH_INTERVAL_MS = 3_000L
-
         /**
          * Pause between detecting a push (or being told to `followTag`) and the first poll
          * against GitLab. Runners aren't instantaneous — the pipeline row typically appears
