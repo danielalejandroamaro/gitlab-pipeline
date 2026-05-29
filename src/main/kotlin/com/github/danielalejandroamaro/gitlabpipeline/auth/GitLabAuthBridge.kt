@@ -4,7 +4,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.thisLogger
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.plugins.gitlab.authentication.accounts.GitLabAccount
-import org.jetbrains.plugins.gitlab.authentication.accounts.GitLabAccountManager
+import org.jetbrains.plugins.gitlab.authentication.accounts.PersistentGitLabAccountManager
 
 /**
  * Bridge to the official JetBrains GitLab plugin (`org.jetbrains.plugins.gitlab`).
@@ -12,6 +12,12 @@ import org.jetbrains.plugins.gitlab.authentication.accounts.GitLabAccountManager
  * Reuses accounts the user has already configured in
  *   Settings > Version Control > GitLab
  * including self-hosted servers, so this plugin never asks for its own token.
+ *
+ * Types against `PersistentGitLabAccountManager` (concrete, non-`@ApiStatus.Internal`)
+ * rather than the `GitLabAccountManager` interface (internal). `accountsState` and
+ * `findCredentials` are inherited from `com.intellij.collaboration.auth.AccountManagerBase`,
+ * which is part of the public collaboration framework — so the IntelliJ Plugin Verifier
+ * does not flag these calls.
  */
 object GitLabAuthBridge {
 
@@ -23,10 +29,10 @@ object GitLabAuthBridge {
         val rawAccount: GitLabAccount,
     )
 
-    private val accountManager: GitLabAccountManager?
+    private val accountManager: PersistentGitLabAccountManager?
         get() = runCatching {
-            ApplicationManager.getApplication().getService(GitLabAccountManager::class.java)
-        }.onFailure { logger.warn("GitLabAccountManager unavailable: ${it.message}") }
+            ApplicationManager.getApplication().getService(PersistentGitLabAccountManager::class.java)
+        }.onFailure { logger.warn("PersistentGitLabAccountManager unavailable: ${it.message}") }
             .getOrNull()
 
     fun accounts(): List<ResolvedAccount> {

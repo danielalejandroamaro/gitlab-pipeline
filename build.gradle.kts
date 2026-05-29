@@ -35,12 +35,13 @@ intellijPlatform {
         ides {
             recommended()
         }
-        // Two internal-API touchpoints are intentional and documented:
-        //   - GitLabAccountManager reuse in GitLabAuthBridge (zero own credentials).
-        //   - StatusBar.removeWidget in LeftIndicatorMounter (avoid duplicate indicators).
-        // Both are stable across 252/253/261/262 per the verifier report. Fail on real
-        // compat problems, not on these.
-        failureLevel = (FailureLevel.ALL - FailureLevel.INTERNAL_API_USAGES).toList()
+        // Fail the build on *any* verifier signal — including INTERNAL_API_USAGES.
+        // The bridge to the official GitLab plugin types against the non-internal
+        // `PersistentGitLabAccountManager` + `AccountManagerBase` chain, and the
+        // status-bar de-duplication goes through `StatusBarWidgetsManager.updateWidget`
+        // instead of `StatusBar.removeWidget(String)`. If a future change reintroduces
+        // an internal touchpoint we want CI to block it instead of tolerating it.
+        failureLevel = FailureLevel.ALL.toList()
     }
 }
 
@@ -55,8 +56,9 @@ dependencies {
         bundledPlugin("Git4Idea")
 
         // Official JetBrains GitLab plugin — we reuse its account manager + tokens
-        // via reflection at runtime; declaring it here so it's on the classpath and
-        // the plugin.xml <depends> resolves.
+        // through the public collaboration-framework types (`PersistentGitLabAccountManager`
+        // + `AccountManagerBase`). Declared here so it's on the classpath and the
+        // plugin.xml <depends> resolves.
         bundledPlugin("org.jetbrains.plugins.gitlab")
 
         testFramework(TestFrameworkType.Platform)

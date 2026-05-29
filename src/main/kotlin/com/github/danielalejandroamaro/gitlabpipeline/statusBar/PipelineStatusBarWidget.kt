@@ -4,6 +4,7 @@ import com.github.danielalejandroamaro.gitlabpipeline.model.Pipeline
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
 import com.github.danielalejandroamaro.gitlabpipeline.services.GitLabPipelineService
 import com.github.danielalejandroamaro.gitlabpipeline.ui.ColoredDotIcon
+import com.github.danielalejandroamaro.gitlabpipeline.startup.LeftIndicatorMountState
 import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.components.service
@@ -27,7 +28,14 @@ import javax.swing.Timer as SwingTimer
 class PipelineStatusBarWidgetFactory : StatusBarWidgetFactory {
     override fun getId(): String = WIDGET_ID
     override fun getDisplayName(): String = "GitLab Pipeline"
-    override fun isAvailable(project: Project): Boolean = true
+
+    /**
+     * Hidden once [LeftIndicatorMountState] reports a successful left mount — there is
+     * already a leftmost indicator and a second one on the right side would be redundant.
+     */
+    override fun isAvailable(project: Project): Boolean =
+        !project.service<LeftIndicatorMountState>().leftMounted
+
     override fun createWidget(project: Project): StatusBarWidget = PipelineStatusBarWidget(project)
     override fun canBeEnabledOn(statusBar: StatusBar): Boolean = true
 

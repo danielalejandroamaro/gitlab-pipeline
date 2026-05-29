@@ -3,11 +3,13 @@ package com.github.danielalejandroamaro.gitlabpipeline.startup
 import com.github.danielalejandroamaro.gitlabpipeline.statusBar.LeftPipelineIndicator
 import com.github.danielalejandroamaro.gitlabpipeline.statusBar.PipelineStatusBarWidgetFactory
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.WindowManager
+import com.intellij.openapi.wm.impl.status.widget.StatusBarWidgetsManager
 import javax.swing.JPanel
 
 /**
@@ -38,11 +40,16 @@ class LeftIndicatorMounter : ProjectActivity {
                 leftPanel.add(indicator, 0)
                 leftPanel.revalidate()
                 leftPanel.repaint()
-                // Left mount succeeded → drop the redundant right-side widget so there is only
-                // one indicator on the status bar (the one pinned at the very left).
-                runCatching { statusBar.removeWidget(PipelineStatusBarWidgetFactory.WIDGET_ID) }
-                    .onFailure { logger.info("Right widget already absent / could not be removed: ${it.message}") }
-                logger.info("Left pipeline indicator mounted at leftPanel index 0; right widget removed")
+                // Left mount succeeded → mark the project state and ask StatusBarWidgetsManager
+                // to re-evaluate `isAvailable` on our factory, which now returns false. The
+                // manager will dispose the right-side widget through the public API path,
+                // avoiding the internal `StatusBar.removeWidget(String)` call.
+                project.service<LeftIndicatorMountState>().leftMounted = true
+                runCatching {
+                    project.service<StatusBarWidgetsManager>()
+                        .updateWidget(PipelineStatusBarWidgetFactory::class.java)
+                }.onFailure { logger.info("StatusBarWidgetsManager.updateWidget failed: ${it.message}") }
+                logger.info("Left pipeline indicator mounted at leftPanel index 0; right widget hidden via isAvailable")
             } else {
                 // No public API to mount on the left panel in 2026.1+ status bar.
                 // If the internal `leftPanel` field is ever renamed we degrade to the right-side
