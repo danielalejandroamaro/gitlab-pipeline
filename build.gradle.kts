@@ -1,4 +1,5 @@
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
@@ -11,6 +12,36 @@ intellijPlatform {
     // forms compiler / nullability bytecode rewrite step. It also dodges a
     // path-resolution bug on non-JBR JDKs (looks for $JAVA_HOME\Packages).
     instrumentCode = false
+
+    pluginConfiguration {
+        version = providers.gradleProperty("version")
+        ideaVersion {
+            sinceBuild = "252"
+            untilBuild = provider { null }
+        }
+    }
+
+    signing {
+        certificateChain = providers.environmentVariable("CERTIFICATE_CHAIN")
+        privateKey = providers.environmentVariable("PRIVATE_KEY")
+        password = providers.environmentVariable("PRIVATE_KEY_PASSWORD")
+    }
+
+    publishing {
+        token = providers.environmentVariable("PUBLISH_TOKEN")
+    }
+
+    pluginVerification {
+        ides {
+            recommended()
+        }
+        // Two internal-API touchpoints are intentional and documented:
+        //   - GitLabAccountManager reuse in GitLabAuthBridge (zero own credentials).
+        //   - StatusBar.removeWidget in LeftIndicatorMounter (avoid duplicate indicators).
+        // Both are stable across 252/253/261/262 per the verifier report. Fail on real
+        // compat problems, not on these.
+        failureLevel = (FailureLevel.ALL - FailureLevel.INTERNAL_API_USAGES).toList()
+    }
 }
 
 dependencies {

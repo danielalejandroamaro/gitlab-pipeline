@@ -4,3 +4,7 @@
 .intellijPlatform
 .kotlin
 build
+
+# Cygwin/MSYS stack traces y secretos locales (firma del plugin)
+*.stackdump
+secrets/
