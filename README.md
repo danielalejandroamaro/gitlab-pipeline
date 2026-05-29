@@ -54,16 +54,32 @@ El polling tras push hace snapshot del id máximo de tag-pipeline conocido y bus
 
 ## Desarrollo
 
+### 📦 Dónde queda el `.zip`
+
+```
+build\distributions\gitlab-pipeline-watcher-<version>.zip
+```
+
+Es **siempre** ahí. Ruta absoluta típica en esta máquina: `C:\work\gitlab-pipeline\build\distributions\gitlab-pipeline-watcher-<version>.zip`. Para abrirla en Explorer sin pensarlo: `make open-dist` (o `make install`, que builda y abre la carpeta de una).
+
+### Comandos
+
 ```bash
-# Build del zip distribuible
-./gradlew buildPlugin
-# Resultado en: build/distributions/gitlab-pipeline-watcher-<version>.zip
+make                # build → build\distributions\gitlab-pipeline-watcher-<version>.zip
+make dev            # Sandbox IDE con el plugin precargado (no instala nada)
+make install        # Build + abre build\distributions\ en Explorer
+make rebuild        # Clean + build (zip fresco)
+make zip            # Imprime la ruta absoluta del .zip generado
+make open-dist      # Abre build\distributions\ en Explorer
+make help           # Lista todos los targets
+```
 
-# Tests
-./gradlew test
+Si prefieres gradle directo (con `JAVA_HOME` configurado):
 
-# Arrancar un IDE sandbox con el plugin cargado
-./gradlew runIde
+```bash
+./gradlew buildPlugin   # Output: build/distributions/gitlab-pipeline-watcher-<version>.zip
+./gradlew runIde        # Sandbox IDE con plugin cargado
+./gradlew test          # Tests
 ```
 
 Stack: Kotlin 2.1, IntelliJ Platform Gradle Plugin 2.16, JDK 21 (probado con Microsoft OpenJDK 21).

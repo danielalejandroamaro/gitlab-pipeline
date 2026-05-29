@@ -2,6 +2,14 @@
 
 # gitlab-pipeline Changelog
 
+## [0.0.9] - 2026-05-25
+
+Fix: jobs huérfanos cuando el pipeline padre va a terminal.
+
+- **Post-terminal convergence en `followUntilTerminal`** — GitLab es consistente eventualmente: el endpoint `/pipelines/:id` puede retornar `status=success` algunos segundos antes de que `/pipelines/:id/jobs` refleje los estados finales de todos los jobs. Antes, al detectar el pipeline terminal cortábamos el loop inmediatamente y notificábamos con el último snapshot, que podía contener jobs aún en `running`/`pending` → la status bar mostraba el padre como terminado mientras el árbol mostraba hijos congelados en su penúltimo estado. Ahora, tras detectar terminal, se sigue refrescando `listJobs` cada 1.5s (hasta 5 attempts) mientras `!jobsConverged(stages)` — convergidos = todos los jobs en estado terminal o MANUAL (el último cuenta como "settled" porque no se auto-resuelve sin click humano). `state.following` se mantiene durante esa ventana para que la render del panel siga propagando los jobs nuevos a `jobsCache`.
+- **`refreshExpandedNonFollowedJobs` ya no salta pipelines terminales incondicionalmente** — antes el predicado era `if (row.pipeline.status.isTerminal) continue`, así que después de que el follow soltaba el pipeline, nadie le refrescaba los jobs nunca más. Nuevo predicado: skip sólo si el pipeline es terminal Y los jobs cacheados son TODOS terminales/MANUAL. Si el pipeline es terminal pero algún job aún figura como running (consistencia eventual, o jobs que entraron a `manual` recientemente), seguimos refrescando hasta que converja. Casa con el fix de arriba para los pipelines que entraron a terminal antes de que abriéramos el tool window.
+- **Botón Refresh dispara también `refreshExpandedNonFollowedJobs`** — el botón refrescaba el listado de pipelines pero no tocaba los jobs cacheados de los nodos expandidos (esos esperaban al siguiente tick del loop de 3s). Ahora el `actionListener` del JButton encadena `service.refresh()` + `scope.launch { refreshExpandedNonFollowedJobs() }` para feedback inmediato — si clickeas Refresh y tienes un pipeline expandido con un job "stuck", la corrida sale al instante en vez de esperar al próximo tick.
+
 ## [0.0.8] - 2026-05-25
 
 Copia rápida de tags desde el tree.

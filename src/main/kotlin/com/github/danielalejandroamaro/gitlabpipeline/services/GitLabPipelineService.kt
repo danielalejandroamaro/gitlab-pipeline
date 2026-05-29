@@ -288,8 +288,25 @@ class GitLabPipelineService(
                 currentStage = currentStage,
             )
             if (updated.status.isTerminal) {
+                // GitLab is eventually consistent — pipeline.status can flip to SUCCESS/FAILED a
+                // few seconds before /jobs settles every job into its final state. Keep refreshing
+                // jobs (with the pipeline still treated as "followed" so the panel keeps mirroring
+                // state.stages into its cache) until every job is terminal too (or MANUAL, which
+                // legitimately stays non-terminal until a human triggers it), or we hit the
+                // convergence budget. Without this, the tree freezes with stale "running" job
+                // icons while the parent pipeline shows as finished.
+                var finalStages = stages
+                var attempts = 0
+                while (!jobsConverged(finalStages) && attempts < POST_TERMINAL_CONVERGENCE_ATTEMPTS) {
+                    delay(POST_TERMINAL_CONVERGENCE_INTERVAL_MS)
+                    val refreshedJobs = client.listJobs(projectId, pipelineId)
+                    finalStages = buildStages(refreshedJobs)
+                    _state.value = _state.value.copy(stages = finalStages)
+                    attempts++
+                }
+
                 val durationLabel = updated.duration?.let { "${it}s" } ?: "?"
-                val breakdown = formatStageBreakdown(stages)
+                val breakdown = formatStageBreakdown(finalStages)
                 val baseMsg = MyBundle["notification.pipelineFinished", updated.id.toString(), updated.status.raw, durationLabel]
                 val fullMsg = if (breakdown.isBlank()) baseMsg else "$baseMsg\n$breakdown"
                 notify(
@@ -303,6 +320,16 @@ class GitLabPipelineService(
             delay(3_000L)
         }
     }
+
+    /**
+     * A pipeline's jobs are "converged" when every one of them is in a terminal status or in
+     * MANUAL (the latter never auto-resolves — it's terminal-for-our-purposes). Used to decide
+     * when to stop the post-terminal convergence loop above.
+     */
+    private fun jobsConverged(stages: List<StageSummary>): Boolean =
+        stages.all { stage ->
+            stage.jobs.all { it.status.isTerminal || it.status == PipelineStatus.MANUAL }
+        }
 
     /**
      * Preserves the order in which stages were first introduced by the GitLab jobs response
@@ -357,5 +384,11 @@ class GitLabPipelineService(
          * 1–3s after the push lands. Polling before that is just wasted requests.
          */
         private const val PUSH_INITIAL_DELAY_MS = 2_000L
+
+        /** How many extra job polls we do after the parent pipeline goes terminal, to absorb GitLab's eventual-consistency lag between /pipeline status and /jobs status. */
+        private const val POST_TERMINAL_CONVERGENCE_ATTEMPTS = 5
+
+        /** Spacing between those post-terminal job polls. */
+        private const val POST_TERMINAL_CONVERGENCE_INTERVAL_MS = 1_500L
     }
 }

@@ -141,7 +141,13 @@ private class PipelinePanel(private val project: Project) {
     }
 
     private val refreshButton = JButton(MyBundle["toolWindow.refresh"]).apply {
-        addActionListener { service.refresh() }
+        addActionListener {
+            service.refresh()
+            // Manual refresh also force-refreshes the jobs of any currently-expanded pipeline.
+            // The background loop already does this every 3s, but firing it on click gives the
+            // user immediate feedback instead of "click, wait, see nothing change".
+            scope.launch { refreshExpandedNonFollowedJobs() }
+        }
     }
 
     private val stagesPanel = StagesStripPanel()
@@ -228,8 +234,18 @@ private class PipelinePanel(private val project: Project) {
                 val row = child.userObject as? PipelineRow ?: continue
                 val id = row.pipeline.id
                 if (id == followingId) continue
-                if (row.pipeline.status.isTerminal) continue
                 if (!tree.isExpanded(TreePath(child.path))) continue
+                // For terminal pipelines: only skip if their cached jobs are ALSO all in a
+                // terminal state. GitLab is eventually consistent — the parent pipeline can flip
+                // to SUCCESS/FAILED before the /jobs endpoint settles every job — and previously
+                // we skipped terminal pipelines unconditionally, which left jobs frozen in
+                // "running"/"build" forever. MANUAL counts as "settled" since it never auto-resolves.
+                if (row.pipeline.status.isTerminal) {
+                    val cached = jobsCache[id]
+                    if (cached != null && cached.all { it.status.isTerminal || it.status == PipelineStatus.MANUAL }) {
+                        continue
+                    }
+                }
                 candidates += child to id
             }
         }
