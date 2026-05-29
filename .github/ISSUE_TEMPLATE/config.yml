@@ -1,0 +1,15 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Commercial license / closed-source integration
+    url: mailto:danielalejandro.amaroramos@gmail.com
+    about: >-
+      AGPL v3 forbids embedding this plugin in a closed-source product or
+      reselling it without publishing source. If that is your use case, email
+      directly to negotiate a separate commercial license — do not open a
+      public issue for it.
+  - name: Security vulnerability disclosure
+    url: https://github.com/danielalejandroamaro/gitlab-pipeline/security/advisories/new
+    about: >-
+      Use GitHub's private security advisories instead of a public issue, so
+      details aren't exposed before a fix ships. See SECURITY.md for the
+      full policy.

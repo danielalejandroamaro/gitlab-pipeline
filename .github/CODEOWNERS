@@ -1,0 +1,3 @@
+# Default: every change auto-requests review from the maintainer.
+# Format: <pattern> <owner...>
+*  @danielalejandroamaro

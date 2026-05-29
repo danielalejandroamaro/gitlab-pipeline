@@ -1,0 +1,67 @@
+name: Bug report
+description: Something the plugin should do but doesn't, or does wrong
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please fill in every section — vague reports
+        (e.g. "doesn't work") will be closed without comment.
+
+  - type: input
+    id: ide
+    attributes:
+      label: IDE + version
+      description: e.g. IntelliJ IDEA Ultimate 2025.2.6.2, WebStorm 2026.1, GoLand 2026.1.
+      placeholder: IntelliJ IDEA Ultimate 2025.2.6.2
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Bottom of the plugin page in Settings → Plugins → Installed.
+      placeholder: 0.0.9
+    validations:
+      required: true
+
+  - type: input
+    id: gitlab
+    attributes:
+      label: GitLab type and version
+      description: gitlab.com / self-hosted (specify version, e.g. 17.4 EE).
+      placeholder: self-hosted, GitLab CE 17.4
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happens
+    attributes:
+      label: What happens vs. what you expected
+      description: Concrete description of the broken behaviour and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Numbered list, as minimal as possible.
+      placeholder: |
+        1. Open a project with a `.gitlab-ci.yml`.
+        2. Push a tag from the IDE.
+        3. The status bar widget stays grey instead of spinning.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: |
+        Help → Show Log in Explorer/Finder. Filter for `GitLabPipeline` or
+        `gitlabpipeline`. Paste only the relevant lines; redact tokens.
+      render: text
+    validations:
+      required: false
