@@ -91,6 +91,19 @@ Notas de build:
 
 ## Licencia
 
+Publicado bajo **GNU AGPL v3** (texto completo en [`LICENSE`](LICENSE)).
+
+Resumen práctico de qué te permite hacer AGPL v3:
+
+- **Uso personal o interno de equipo**: libre. Instala, modifica, comparte con tu equipo sin pedir permiso.
+- **Fork público**: libre, siempre que tu fork también se publique bajo AGPL v3 y mantenga el aviso de copyright.
+- **Distribuir un derivado** (modificado o no): obligatorio publicar el código fuente del derivado bajo AGPL v3.
+- **Servir como SaaS / IDE remoto / Code With Me**: cuenta también como "distribución" en AGPL — si expones funcionalidad de este plugin a usuarios externos, debes publicar el fuente.
+
+### Licencia comercial (dual licensing)
+
+Si quieres usar este plugin **integrado en un producto cerrado**, **revenderlo**, **embeberlo en una solución comercial sin abrir tu código**, o de cualquier otro modo que AGPL v3 te prohíba — contacta a **danielalejandro.amaroramos@gmail.com** para negociar una licencia comercial separada.
+
 Este plugin **no está afiliado, respaldado, patrocinado ni aprobado por GitLab Inc.** GitLab es marca registrada de GitLab Inc.
 
 ## Créditos
