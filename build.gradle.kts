@@ -1,4 +1,6 @@
+import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
+import org.jetbrains.intellij.platform.gradle.models.ProductRelease
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
 
 plugins {
@@ -33,7 +35,23 @@ intellijPlatform {
 
     pluginVerification {
         ides {
+            // recommended() covers IntelliJ IDEA Community + Ultimate (the default surface
+            // every JB plugin must verify against). On top of that we pin the IDEs Dno
+            // actually uses day-to-day so the Marketplace "Compatibility" matrix shows them.
+            // select { ... } resolves the latest 2025.2.x release of each productCode so we
+            // don't have to bump version strings here on every IDE release.
             recommended()
+            select {
+                types = listOf(
+                    IntelliJPlatformType.PyCharmProfessional,
+                    IntelliJPlatformType.PyCharmCommunity,
+                    IntelliJPlatformType.WebStorm,
+                    IntelliJPlatformType.PhpStorm,
+                )
+                channels = listOf(ProductRelease.Channel.RELEASE)
+                sinceBuild = "252"
+                untilBuild = "252.*"
+            }
         }
         // Fail the build on *any* verifier signal — including INTERNAL_API_USAGES.
         // The bridge to the official GitLab plugin types against the non-internal
