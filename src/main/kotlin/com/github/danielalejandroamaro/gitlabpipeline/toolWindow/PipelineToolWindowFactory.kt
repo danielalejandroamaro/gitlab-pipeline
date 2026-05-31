@@ -66,9 +66,11 @@ class PipelineToolWindowFactory : ToolWindowFactory {
         GitLabCiDetector.hasCiFile(project)
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
-        val panel = PipelinePanel(project)
-        val content = ContentFactory.getInstance().createContent(panel.root, null, false)
-        toolWindow.contentManager.addContent(content)
+        val pipelinesPanel = PipelinePanel(project)
+        val eventLogPanel = EventLogTabPanel(project)
+        val cf = ContentFactory.getInstance()
+        toolWindow.contentManager.addContent(cf.createContent(pipelinesPanel.root, "Pipelines", false))
+        toolWindow.contentManager.addContent(cf.createContent(eventLogPanel.root, "Logs", false))
     }
 }
 
@@ -84,6 +86,10 @@ private class PipelinePanel(private val project: Project) {
     private val tree = Tree(treeModel).apply {
         isRootVisible = false
         showsRootHandles = true
+        // Disable JTree's built-in "double-click toggles expansion" so our doble-click handler
+        // owns the gesture (copy version) without colliding with the default expand/collapse.
+        // Expansion still works via the disclosure chevron on the left of the row.
+        toggleClickCount = 0
         cellRenderer = PipelineTreeRenderer()
         addMouseListener(object : MouseAdapter() {
             // Right-click → context menu. `isPopupTrigger` is checked on both press AND release

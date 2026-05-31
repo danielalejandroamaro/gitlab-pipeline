@@ -11,6 +11,7 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindowManager
@@ -93,6 +94,16 @@ class GitLabPipelineService(
     /** False until the first successful list fetch lands. Suppresses notifications for the historic backlog at project open. */
     @Volatile private var firstFetchSeeded = false
 
+    /**
+     * Last error category we balloon'd (e.g. `NO_REMOTE`, `NO_ACCOUNT`, `NO_TOKEN`, `NO_PROJECT`).
+     * Used to dedupe error balloons when the same failure recurs every tick of the auto-refresh
+     * loop — the user only sees one toast per error type until either the error clears (success)
+     * or the category changes (e.g. account now configured but token missing).
+     */
+    @Volatile private var lastErrorKey: String? = null
+
+    private val eventLog get() = project.service<PipelineEventLog>()
+
     /** Trace text for a single job, or null if the API call fails / the service isn't initialised yet. */
     fun fetchJobTrace(jobId: Long): String? {
         val client = cachedClient ?: return null
@@ -141,32 +152,31 @@ class GitLabPipelineService(
     private fun refreshNow(): Pair<GitLabApiClient, Long>? {
         val remote = GitRemoteResolver.resolve(project)
         if (remote == null) {
-            _state.value = _state.value.copy(errorMessage = "No GitLab remote detected.", pipelines = emptyList())
+            val msg = "No GitLab remote detected."
+            _state.value = _state.value.copy(errorMessage = msg, pipelines = emptyList())
+            notifyError("NO_REMOTE", msg)
             return null
         }
         val account = GitLabAuthBridge.findAccountForRemote(remote.url)
         if (account == null) {
-            _state.value = _state.value.copy(
-                errorMessage = "No GitLab account configured for ${remote.url}.",
-                pipelines = emptyList(),
-            )
+            val msg = "No GitLab account configured for ${remote.url}."
+            _state.value = _state.value.copy(errorMessage = msg, pipelines = emptyList())
+            notifyError("NO_ACCOUNT", msg)
             return null
         }
         val token = GitLabAuthBridge.tokenFor(account)
         if (token.isNullOrBlank()) {
-            _state.value = _state.value.copy(
-                errorMessage = "GitLab account ${account.name} has no token stored.",
-                pipelines = emptyList(),
-            )
+            val msg = "GitLab account ${account.name} has no token stored."
+            _state.value = _state.value.copy(errorMessage = msg, pipelines = emptyList())
+            notifyError("NO_TOKEN", msg)
             return null
         }
         val client = GitLabApiClient(account.serverUrl, token)
         val projectId = client.resolveProjectId(remote.projectPath)
         if (projectId == null) {
-            _state.value = _state.value.copy(
-                errorMessage = "Could not resolve project ${remote.projectPath} on ${account.serverUrl}.",
-                pipelines = emptyList(),
-            )
+            val msg = "Could not resolve project ${remote.projectPath} on ${account.serverUrl}."
+            _state.value = _state.value.copy(errorMessage = msg, pipelines = emptyList())
+            notifyError("NO_PROJECT", msg)
             return null
         }
         cachedClient = client
@@ -174,10 +184,13 @@ class GitLabPipelineService(
         val pipelines = client.listPipelines(projectId)
         if (pipelines == null) {
             // Transient API failure — keep the previous list so the tool window doesn't flash empty
-            // on every blip and the user doesn't lose their tree expansion / cached jobs.
+            // on every blip and the user doesn't lose their tree expansion / cached jobs. No
+            // balloon: a single failed tick on an otherwise-healthy connection isn't worth alerting.
             logger.info("listPipelines transient failure during refresh; keeping previous list")
+            eventLog.warn("listPipelines transient failure (kept previous list)")
             return client to projectId
         }
+        clearErrorDedupe()
         val previousById = _state.value.pipelines.associateBy { it.id }
         _state.value = _state.value.copy(
             errorMessage = null,
@@ -186,6 +199,74 @@ class GitLabPipelineService(
         )
         emitListDeltaNotifications(pipelines, previousById)
         return client to projectId
+    }
+
+    /**
+     * Balloon dedupe so the resolve chain (which retries every refresh tick) doesn't spam the
+     * notification center with the same red toast. Re-fires when [key] changes (resolve chain
+     * stepped past the previous gate) or after [clearErrorDedupe] runs on a successful refresh.
+     * Always writes to the in-memory event log, regardless of dedupe state.
+     */
+    private fun notifyError(key: String, message: String) {
+        eventLog.error(message)
+        if (lastErrorKey == key) return
+        lastErrorKey = key
+        notify(message, NotificationType.ERROR)
+    }
+
+    private fun clearErrorDedupe() {
+        if (lastErrorKey != null) {
+            eventLog.info("Connection to GitLab recovered")
+            lastErrorKey = null
+        }
+    }
+
+    /**
+     * One-shot diagnostic: dumps every step of the resolve chain into the event log so the user
+     * can see exactly where the connection breaks without grepping `idea.log`. Wired to the
+     * "Diagnosticar ahora" button in the Logs tab.
+     */
+    fun runDiagnostics() {
+        eventLog.info("=== Diagnóstico ===")
+        eventLog.info("ciEnabled = ${_state.value.ciEnabled}")
+        val remote = GitRemoteResolver.resolve(project)
+        if (remote == null) {
+            eventLog.error("No GitLab remote detected for this project")
+            return
+        }
+        eventLog.info("Remote URL: ${remote.url}")
+        eventLog.info("Project path: ${remote.projectPath}")
+        val accounts = GitLabAuthBridge.accounts()
+        eventLog.info("GitLab accounts available: ${accounts.size}")
+        accounts.forEach { acc ->
+            eventLog.info("  - ${acc.name} @ ${acc.serverUrl}")
+        }
+        val account = GitLabAuthBridge.findAccountForRemote(remote.url)
+        if (account == null) {
+            eventLog.error("No GitLab account matches host of ${remote.url}")
+            return
+        }
+        eventLog.info("Matched account: ${account.name} (${account.serverUrl})")
+        val token = GitLabAuthBridge.tokenFor(account)
+        if (token.isNullOrBlank()) {
+            eventLog.error("Token missing or blank for account ${account.name}")
+            return
+        }
+        eventLog.info("Token present (length ${token.length})")
+        val client = GitLabApiClient(account.serverUrl, token)
+        val projectId = client.resolveProjectId(remote.projectPath)
+        if (projectId == null) {
+            eventLog.error("resolveProjectId returned null for ${remote.projectPath}")
+            return
+        }
+        eventLog.info("Resolved project id: $projectId")
+        val pipelines = client.listPipelines(projectId)
+        if (pipelines == null) {
+            eventLog.error("listPipelines returned null (network / 5xx / parse error)")
+            return
+        }
+        eventLog.info("listPipelines OK: ${pipelines.size} pipelines")
+        eventLog.info("=== Fin del diagnóstico ===")
     }
 
     /**
@@ -217,6 +298,7 @@ class GitLabPipelineService(
                     MyBundle["notification.pipelineDetected", p.id.toString(), source, versionLabel],
                     NotificationType.INFORMATION,
                 )
+                eventLog.info("Pipeline #${p.id} detected ($source / $versionLabel, status=${p.status.raw})")
             }
             if (p.status.isTerminal && p.id != followingId && notifiedTerminalIds.add(p.id)) {
                 val previousStatus = previousById[p.id]?.status
@@ -228,6 +310,7 @@ class GitLabPipelineService(
                     if (p.status == PipelineStatus.SUCCESS) NotificationType.INFORMATION
                     else NotificationType.ERROR,
                 )
+                eventLog.info("Pipeline #${p.id} terminal: ${p.status.raw} (${durationLabel})")
             }
         }
     }
@@ -239,6 +322,7 @@ class GitLabPipelineService(
      */
     fun onPushDetected() {
         if (!_state.value.ciEnabled) return
+        eventLog.info("Push detected — looking for newly-created tag pipeline")
         followJob?.cancel()
         followJob = scope.launch(Dispatchers.IO) {
             // Capture the baseline BEFORE refreshing. If a recent auto-refresh already pulled in
