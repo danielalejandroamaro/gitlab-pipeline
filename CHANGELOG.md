@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.0.13] - 2026-05-31
+
 Expansión de la matriz de compatibilidad del Marketplace + fix del último step roto del pipeline de release (`Create Pull Request`).
 
 - **`pluginVerification` ahora cubre PyCharm Professional + Community, WebStorm y PhpStorm además del `recommended()`** — `build.gradle.kts` añade un bloque `select { types = listOf(IntelliJPlatformType.PyCharmProfessional, PyCharmCommunity, WebStorm, PhpStorm); channels = listOf(ProductRelease.Channel.RELEASE); sinceBuild = "252"; untilBuild = "252.*" }` debajo de `recommended()` (que ya cubre IDEA Community + Ultimate). El uso de `select` resuelve automáticamente la última versión 2025.2.x de cada productCode, así no hay que bumpear strings de versión a cada release de JetBrains. **Caveat conocido**: PyCharm Community no trae `org.jetbrains.plugins.gitlab` bundled — el `bundledPlugin("org.jetbrains.plugins.gitlab")` del bloque de dependencias puede romper la resolución del verifier para `PC`; si el CI lo confirma, hay que decidir si se quita PC del `select` o si la dependencia pasa a `optional` en `plugin.xml`. Los demás (PY/WS/PS, todos Ultimate-equivalentes) sí lo traen bundled.
@@ -148,6 +150,7 @@ Feedback visual y soporte de pipelines multi-etapa. La status bar ahora distingu
 ### Bugs y limpieza
 
 - **CHANGELOG header arreglado** — `## v0.0.1 — 2026-05-25` no parseaba con el plugin gradle-changelog (header parser regex pide SemVer puro). Cambiado a formato keepachangelog `## [0.0.1] - 2026-05-25`. La entrada de esta release sigue el mismo formato.
+
 - **README rebuild** — `README.md` reescrito de cero: fuera el scaffold con `MARKETPLACE_ID` placeholders, ahora describe qué hace el plugin, requisitos (link al 22857 + nota sobre IDE Ultimate vs no-Ultimate), instalación manual desde zip, tabla de componentes internos, limitaciones conocidas (CLI push, heurística de detección de tag) y comandos de desarrollo.
 
 ### Detalles de implementación
@@ -205,3 +208,18 @@ Primera release publicable. El proyecto pasa de scaffold de [IntelliJ Platform P
 ### Distribución
 
 - **Sideload local** — zip empaquetable con `./gradlew buildPlugin` en `build/distributions/gitlab-pipeline-watcher-0.0.1.zip` (~84 KB). Probado contra IntelliJ IDEA 2026.1 Ultimate, PyCharm 2026.1 y WebStorm 2026.1 — el plugin carga sin restart (`Plugin com.github.danielalejandroamaro.gitlabpipeline loaded without restart in 16 ms` en `idea.log`).
+
+[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.13...HEAD
+[0.0.13]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.12...0.0.13
+[0.0.12]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.11...0.0.12
+[0.0.11]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.10...0.0.11
+[0.0.10]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.9...0.0.10
+[0.0.9]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.8...0.0.9
+[0.0.8]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.7...0.0.8
+[0.0.7]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.6...0.0.7
+[0.0.6]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.5...0.0.6
+[0.0.5]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.4...0.0.5
+[0.0.4]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.3...0.0.4
+[0.0.3]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.2...0.0.3
+[0.0.2]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.1...0.0.2
+[0.0.1]: https://github.com/danielalejandroamaro/gitlab-pipeline/commits/0.0.1
