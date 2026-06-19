@@ -99,7 +99,7 @@ class LeftPipelineIndicator(
     private fun currentIcon(): Icon = when (currentStatus) {
         PipelineStatus.SUCCESS -> ColoredDotIcon.GREEN
         PipelineStatus.FAILED -> ColoredDotIcon.RED
-        PipelineStatus.CANCELED, PipelineStatus.SKIPPED -> ColoredDotIcon.GREY
+        PipelineStatus.CANCELING, PipelineStatus.CANCELED, PipelineStatus.SKIPPED -> ColoredDotIcon.GREY
         PipelineStatus.MANUAL, PipelineStatus.SCHEDULED -> ColoredDotIcon.AMBER
         PipelineStatus.UNKNOWN -> ColoredDotIcon.GREY
         // Non-terminal → spinner frame

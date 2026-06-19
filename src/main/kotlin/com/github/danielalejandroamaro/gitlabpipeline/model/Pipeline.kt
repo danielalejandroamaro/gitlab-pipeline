@@ -8,6 +8,7 @@ enum class PipelineStatus(val raw: String) {
     RUNNING("running"),
     SUCCESS("success"),
     FAILED("failed"),
+    CANCELING("canceling"),
     CANCELED("canceled"),
     SKIPPED("skipped"),
     MANUAL("manual"),
@@ -73,6 +74,7 @@ data class StageSummary(
             val effective = jobs.filterNot { it.allowFailure && it.status == PipelineStatus.FAILED }
             val status = when {
                 jobs.any { it.status == PipelineStatus.RUNNING } -> PipelineStatus.RUNNING
+                jobs.any { it.status == PipelineStatus.CANCELING } -> PipelineStatus.CANCELING
                 effective.any { it.status == PipelineStatus.FAILED } -> PipelineStatus.FAILED
                 jobs.any { it.status == PipelineStatus.PENDING || it.status == PipelineStatus.PREPARING ||
                            it.status == PipelineStatus.WAITING_FOR_RESOURCE || it.status == PipelineStatus.CREATED }
@@ -80,6 +82,8 @@ data class StageSummary(
                 jobs.any { it.status == PipelineStatus.MANUAL } -> PipelineStatus.MANUAL
                 jobs.any { it.status == PipelineStatus.SCHEDULED } -> PipelineStatus.SCHEDULED
                 jobs.all { it.status == PipelineStatus.SKIPPED } -> PipelineStatus.SKIPPED
+                jobs.all { it.status == PipelineStatus.CANCELED || it.status == PipelineStatus.SKIPPED }
+                    -> PipelineStatus.CANCELED
                 jobs.all { it.status == PipelineStatus.SUCCESS || it.status == PipelineStatus.SKIPPED }
                     -> PipelineStatus.SUCCESS
                 else -> PipelineStatus.UNKNOWN

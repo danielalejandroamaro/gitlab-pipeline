@@ -500,7 +500,7 @@ private class PipelineTreeRenderer : ColoredTreeCellRenderer() {
     private fun iconFor(status: PipelineStatus): Icon = when (status) {
         PipelineStatus.SUCCESS -> ColoredDotIcon.GREEN
         PipelineStatus.FAILED -> ColoredDotIcon.RED
-        PipelineStatus.CANCELED, PipelineStatus.SKIPPED -> ColoredDotIcon.GREY
+        PipelineStatus.CANCELING, PipelineStatus.CANCELED, PipelineStatus.SKIPPED -> ColoredDotIcon.GREY
         PipelineStatus.MANUAL, PipelineStatus.SCHEDULED -> ColoredDotIcon.AMBER
         PipelineStatus.RUNNING -> AllIcons.Actions.Execute
         PipelineStatus.PENDING, PipelineStatus.WAITING_FOR_RESOURCE,
@@ -667,7 +667,7 @@ private class StageChip(stage: StageSummary, isCurrent: Boolean) : JPanel(FlowLa
     private fun iconFor(status: PipelineStatus): Icon = when (status) {
         PipelineStatus.SUCCESS -> ColoredDotIcon.GREEN
         PipelineStatus.FAILED -> ColoredDotIcon.RED
-        PipelineStatus.CANCELED, PipelineStatus.SKIPPED -> ColoredDotIcon.GREY
+        PipelineStatus.CANCELING, PipelineStatus.CANCELED, PipelineStatus.SKIPPED -> ColoredDotIcon.GREY
         PipelineStatus.MANUAL, PipelineStatus.SCHEDULED -> ColoredDotIcon.AMBER
         PipelineStatus.RUNNING -> AllIcons.Actions.Execute
         PipelineStatus.PENDING, PipelineStatus.WAITING_FOR_RESOURCE,

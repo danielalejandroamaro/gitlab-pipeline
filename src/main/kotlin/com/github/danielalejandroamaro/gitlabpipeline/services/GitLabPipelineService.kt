@@ -498,6 +498,7 @@ class GitLabPipelineService(
             val marker = when (s.status) {
                 PipelineStatus.SUCCESS -> "OK"
                 PipelineStatus.FAILED -> "FAIL"
+                PipelineStatus.CANCELING -> "CANCELING"
                 PipelineStatus.CANCELED -> "CANCEL"
                 PipelineStatus.SKIPPED -> "SKIP"
                 PipelineStatus.RUNNING -> "RUN"

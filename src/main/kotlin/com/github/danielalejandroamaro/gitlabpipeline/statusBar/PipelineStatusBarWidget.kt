@@ -133,7 +133,7 @@ class PipelineStatusBarWidget(
     private fun iconFor(status: PipelineStatus): Icon = when (status) {
         PipelineStatus.SUCCESS -> ColoredDotIcon.GREEN
         PipelineStatus.FAILED -> ColoredDotIcon.RED
-        PipelineStatus.CANCELED, PipelineStatus.SKIPPED -> ColoredDotIcon.GREY
+        PipelineStatus.CANCELING, PipelineStatus.CANCELED, PipelineStatus.SKIPPED -> ColoredDotIcon.GREY
         PipelineStatus.MANUAL, PipelineStatus.SCHEDULED -> ColoredDotIcon.AMBER
         PipelineStatus.UNKNOWN -> ColoredDotIcon.GREY
         // Any non-terminal state -> spinning frame
@@ -143,6 +143,7 @@ class PipelineStatusBarWidget(
     private fun labelFor(status: PipelineStatus): String = when (status) {
         PipelineStatus.SUCCESS -> "terminó OK"
         PipelineStatus.FAILED -> "falló"
+        PipelineStatus.CANCELING -> "cancelando"
         PipelineStatus.CANCELED -> "cancelado"
         PipelineStatus.SKIPPED -> "skipped"
         PipelineStatus.MANUAL -> "manual"
