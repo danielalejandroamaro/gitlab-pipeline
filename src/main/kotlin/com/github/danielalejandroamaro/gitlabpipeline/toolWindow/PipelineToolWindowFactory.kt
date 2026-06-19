@@ -115,6 +115,18 @@ private class PipelinePanel(private val project: Project) {
                     }
                 }
 
+                // Inline download icon hit-test on job rows with artifacts (rightmost slice).
+                if (data is JobRow && data.job.hasArtifacts) {
+                    val bounds = getPathBounds(path) ?: return
+                    val dlIcon = AllIcons.Actions.Download
+                    val iconLeft = bounds.x + bounds.width - dlIcon.iconWidth - COPY_ICON_RIGHT_PADDING
+                    val iconRight = bounds.x + bounds.width
+                    if (e.x in iconLeft..iconRight) {
+                        downloadArtifactsFor(data.job)
+                        return
+                    }
+                }
+
                 if (e.clickCount == 2) {
                     when (data) {
                         // Default double-click on a pipeline copies the version (= ref/tag/branch)
@@ -322,6 +334,13 @@ private class PipelinePanel(private val project: Project) {
             }
             is JobRow -> {
                 val j = data.job
+                if (j.hasArtifacts) {
+                    val sizeLabel = j.artifactsSize?.let { " (${humanBytes(it)})" } ?: ""
+                    menu.add(JMenuItem("Descargar artifacts$sizeLabel", AllIcons.Actions.Download).apply {
+                        addActionListener { downloadArtifactsFor(j) }
+                    })
+                    menu.addSeparator()
+                }
                 menu.add(JMenuItem("Copiar nombre: ${j.name}").apply {
                     addActionListener { copyToClipboard(j.name, "nombre del job") }
                 })
@@ -339,6 +358,47 @@ private class PipelinePanel(private val project: Project) {
     }
 
     private fun copyTagToClipboard(tag: String) = copyToClipboard(tag, "tag $tag")
+
+    /**
+     * Open a Save dialog seeded with the artifacts filename, then stream the zip from GitLab
+     * to disk on the IO dispatcher. User feedback via balloons — success shows the destination,
+     * failure shows a generic "no se pudo descargar" (the detailed cause is in idea.log).
+     */
+    private fun downloadArtifactsFor(job: PipelineJob) {
+        if (!job.hasArtifacts) return
+        val suggestedName = job.artifactsFilename ?: "artifacts-${job.id}.zip"
+        val descriptor = com.intellij.openapi.fileChooser.FileSaverDescriptor(
+            "Descargar artifacts",
+            "Selecciona dónde guardar el archivo",
+            "zip",
+        )
+        val saver = com.intellij.openapi.fileChooser.FileChooserFactory.getInstance()
+            .createSaveFileDialog(descriptor, project)
+        val chosen = saver.save(null as java.nio.file.Path?, suggestedName) ?: return
+        val dest = chosen.file
+        scope.launch(Dispatchers.IO) {
+            val ok = service.downloadJobArtifacts(job.id, dest)
+            ApplicationManager.getApplication().invokeLater {
+                val type = if (ok) com.intellij.notification.NotificationType.INFORMATION
+                           else com.intellij.notification.NotificationType.ERROR
+                val msg = if (ok) "Artifacts guardados en ${dest.absolutePath}"
+                          else "No se pudo descargar los artifacts de #${job.id}"
+                com.intellij.notification.NotificationGroupManager.getInstance()
+                    .getNotificationGroup("GitLab Pipeline Watcher")
+                    .createNotification(msg, type)
+                    .notify(project)
+            }
+        }
+    }
+
+    private fun humanBytes(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        val units = arrayOf("KB", "MB", "GB", "TB")
+        var v = bytes.toDouble() / 1024
+        var i = 0
+        while (v >= 1024 && i < units.size - 1) { v /= 1024; i++ }
+        return String.format("%.1f %s", v, units[i])
+    }
 
     private fun copyToClipboard(text: String, label: String) {
         CopyPasteManager.getInstance().setContents(StringSelection(text))
@@ -433,12 +493,15 @@ private class PipelineTreeRenderer : ColoredTreeCellRenderer() {
 
     /** Set to true on tag-pipeline rows so paintComponent draws the inline copy icon. */
     private var paintCopyIcon: Boolean = false
+    /** Set to true on JobRow with artifacts so paintComponent draws the inline download icon. */
+    private var paintDownloadIcon: Boolean = false
 
     override fun customizeCellRenderer(
         tree: JTree, value: Any?, selected: Boolean, expanded: Boolean,
         leaf: Boolean, row: Int, hasFocus: Boolean,
     ) {
         paintCopyIcon = false
+        paintDownloadIcon = false
         val node = value as? DefaultMutableTreeNode ?: return
         when (val data = node.userObject) {
             is PipelineRow -> {
@@ -463,6 +526,12 @@ private class PipelineTreeRenderer : ColoredTreeCellRenderer() {
                 data.job.duration?.let {
                     append("  (${it.toInt()}s)", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 }
+                if (data.job.hasArtifacts) {
+                    paintDownloadIcon = true
+                    val sizeLabel = data.job.artifactsSize?.let { " · ${humanBytesShort(it)}" } ?: ""
+                    val nameLabel = data.job.artifactsFilename ?: "artifacts.zip"
+                    toolTipText = "Click en el icono ⬇ para descargar artifacts ($nameLabel$sizeLabel)"
+                }
             }
             LoadingRow -> {
                 icon = AllIcons.Process.Step_1
@@ -476,13 +545,16 @@ private class PipelineTreeRenderer : ColoredTreeCellRenderer() {
     }
 
     /**
-     * Reserve trailing space for the copy icon so it doesn't get clipped by the cell's
+     * Reserve trailing space for the copy/download icon so it doesn't get clipped by the cell's
      * preferred width. JTree sizes the cell to this preferredSize before painting.
      */
     override fun getPreferredSize(): Dimension {
         val base = super.getPreferredSize()
         if (paintCopyIcon) {
             base.width += AllIcons.Actions.Copy.iconWidth + COPY_ICON_TOTAL_PADDING
+        }
+        if (paintDownloadIcon) {
+            base.width += AllIcons.Actions.Download.iconWidth + COPY_ICON_TOTAL_PADDING
         }
         return base
     }
@@ -495,6 +567,21 @@ private class PipelineTreeRenderer : ColoredTreeCellRenderer() {
             val iconY = (height - copy.iconHeight) / 2
             copy.paintIcon(this, g, iconX, iconY)
         }
+        if (paintDownloadIcon) {
+            val dl = AllIcons.Actions.Download
+            val iconX = width - dl.iconWidth - COPY_ICON_RIGHT_PAD_PX
+            val iconY = (height - dl.iconHeight) / 2
+            dl.paintIcon(this, g, iconX, iconY)
+        }
+    }
+
+    private fun humanBytesShort(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        val units = arrayOf("KB", "MB", "GB", "TB")
+        var v = bytes.toDouble() / 1024
+        var i = 0
+        while (v >= 1024 && i < units.size - 1) { v /= 1024; i++ }
+        return String.format("%.1f %s", v, units[i])
     }
 
     private fun iconFor(status: PipelineStatus): Icon = when (status) {

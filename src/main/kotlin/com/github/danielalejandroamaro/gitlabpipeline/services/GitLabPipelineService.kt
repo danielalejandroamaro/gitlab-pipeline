@@ -112,6 +112,16 @@ class GitLabPipelineService(
     }
 
     /**
+     * Stream a job's artifacts archive to [dest]. Returns true on success, false if the API
+     * client isn't ready yet or the download itself failed. Caller is on a background thread.
+     */
+    fun downloadJobArtifacts(jobId: Long, dest: java.io.File): Boolean {
+        val client = cachedClient ?: return false
+        val pid = cachedProjectId ?: return false
+        return client.downloadArtifacts(pid, jobId, dest)
+    }
+
+    /**
      * Jobs for an arbitrary pipeline (not just the followed one). Used by the tool window tree
      * to lazy-load children when the user expands a pipeline node. Returns null if the service
      * hasn't done its first successful refresh yet (no cached client).

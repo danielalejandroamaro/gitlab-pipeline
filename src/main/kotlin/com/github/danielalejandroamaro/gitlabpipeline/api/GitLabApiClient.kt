@@ -6,6 +6,7 @@ import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.util.io.HttpRequests
 import com.google.gson.JsonParser
+import java.io.File
 import java.net.URLEncoder
 
 /**
@@ -125,6 +126,7 @@ class GitLabApiClient(
             if (arr.size() == 0) break
             arr.forEach { e ->
                 val obj = e.asJsonObject
+                val artifactsFile = obj["artifacts_file"]?.takeIf { !it.isJsonNull }?.asJsonObject
                 results += Job(
                     id = obj["id"].asLong,
                     name = obj["name"]?.takeIf { !it.isJsonNull }?.asString ?: "(unnamed)",
@@ -135,6 +137,8 @@ class GitLabApiClient(
                     startedAt = obj["started_at"]?.takeIf { !it.isJsonNull }?.asString,
                     finishedAt = obj["finished_at"]?.takeIf { !it.isJsonNull }?.asString,
                     duration = obj["duration"]?.takeIf { !it.isJsonNull }?.asDouble,
+                    artifactsFilename = artifactsFile?.get("filename")?.takeIf { !it.isJsonNull }?.asString,
+                    artifactsSize = artifactsFile?.get("size")?.takeIf { !it.isJsonNull }?.asLong,
                 )
             }
             if (arr.size() < 100) break
@@ -155,6 +159,22 @@ class GitLabApiClient(
                 .readString()
         }.onFailure { logger.warn("jobTrace($projectId,$jobId) failed: ${it.message}") }
             .getOrNull()
+    }
+
+    /**
+     * Download the artifacts archive of a single job into [dest]. Returns true on success.
+     * GitLab serves the zip as `application/zip`; we stream it straight to disk so big
+     * artifacts don't blow up the heap.
+     */
+    fun downloadArtifacts(projectId: Long, jobId: Long, dest: File): Boolean {
+        val url = "$serverUrl/api/v4/projects/$projectId/jobs/$jobId/artifacts"
+        return runCatching {
+            HttpRequests.request(url)
+                .tuner { conn -> conn.setRequestProperty("PRIVATE-TOKEN", token) }
+                .saveToFile(dest, null)
+            true
+        }.onFailure { logger.warn("downloadArtifacts($projectId,$jobId) failed: ${it.message}") }
+            .getOrDefault(false)
     }
 
     private fun get(url: String): String =

@@ -52,7 +52,13 @@ data class Job(
     val startedAt: String?,
     val finishedAt: String?,
     val duration: Double?, // seconds (GitLab returns Double)
-)
+    /** Filename of the job's artifacts archive (e.g. `artifacts.zip`), or null when the job has no artifacts. */
+    val artifactsFilename: String? = null,
+    /** Size in bytes of the artifacts archive. Used for tooltip; null when unknown / no artifacts. */
+    val artifactsSize: Long? = null,
+) {
+    val hasArtifacts: Boolean get() = artifactsFilename != null
+}
 
 /**
  * Aggregated view of a pipeline stage — used to render "etapa actual" + breakdown.
