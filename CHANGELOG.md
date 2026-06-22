@@ -21,6 +21,8 @@ Suite de cambios sobre el tool window: nuevo **tab "Releases"** con sus assets a
 
 ## [0.0.15] - 2026-06-19
 
+## [0.0.15] - 2026-06-19
+
 Descarga **inline de artifacts de jobs** desde el tool window de pipelines, sin tener que abrir GitLab en el navegador. El job que produjo artifacts ahora muestra un icono ⬇ en el extremo derecho de su row del tree (mismo patrón visual del icono de copiar que ya tenían los pipelines de tag); un click izquierdo sobre el icono abre el `FileSaverDialog` con el filename real del archivo (o `artifacts.zip` como fallback) y, tras elegir destino, descarga el zip en background con una balloon de éxito/error al terminar. El click-derecho sobre un job con artifacts agrega arriba del menú existente la entrada "Descargar artifacts (X MB)" como ruta alternativa al mismo flujo.
 
 - **Modelo `Job` extendido con metadatos de artifacts** (`src/main/kotlin/com/github/danielalejandroamaro/gitlabpipeline/model/Pipeline.kt:45`) — nuevos campos `artifactsFilename: String?` y `artifactsSize: Long?` (ambos nullables porque no todos los jobs los tienen) más el helper derivado `val hasArtifacts: Boolean get() = artifactsFilename != null`. El filename siembra el Save dialog y el tamaño aparece en el tooltip ("descargar artifacts (filename · 2.3 MB)").
@@ -188,6 +190,7 @@ Feedback visual y soporte de pipelines multi-etapa. La status bar ahora distingu
 ### Bugs y limpieza
 
 - **CHANGELOG header arreglado** — `## v0.0.1 — 2026-05-25` no parseaba con el plugin gradle-changelog (header parser regex pide SemVer puro). Cambiado a formato keepachangelog `## [0.0.1] - 2026-05-25`. La entrada de esta release sigue el mismo formato.
+
 - **README rebuild** — `README.md` reescrito de cero: fuera el scaffold con `MARKETPLACE_ID` placeholders, ahora describe qué hace el plugin, requisitos (link al 22857 + nota sobre IDE Ultimate vs no-Ultimate), instalación manual desde zip, tabla de componentes internos, limitaciones conocidas (CLI push, heurística de detección de tag) y comandos de desarrollo.
 
 ### Detalles de implementación
@@ -245,3 +248,20 @@ Primera release publicable. El proyecto pasa de scaffold de [IntelliJ Platform P
 ### Distribución
 
 - **Sideload local** — zip empaquetable con `./gradlew buildPlugin` en `build/distributions/gitlab-pipeline-watcher-0.0.1.zip` (~84 KB). Probado contra IntelliJ IDEA 2026.1 Ultimate, PyCharm 2026.1 y WebStorm 2026.1 — el plugin carga sin restart (`Plugin com.github.danielalejandroamaro.gitlabpipeline loaded without restart in 16 ms` en `idea.log`).
+
+[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.15...HEAD
+[0.0.15]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.14...0.0.15
+[0.0.14]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.13...0.0.14
+[0.0.13]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.12...0.0.13
+[0.0.12]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.11...0.0.12
+[0.0.11]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.10...0.0.11
+[0.0.10]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.9...0.0.10
+[0.0.9]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.8...0.0.9
+[0.0.8]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.7...0.0.8
+[0.0.7]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.6...0.0.7
+[0.0.6]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.5...0.0.6
+[0.0.5]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.4...0.0.5
+[0.0.4]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.3...0.0.4
+[0.0.3]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.2...0.0.3
+[0.0.2]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.1...0.0.2
+[0.0.1]: https://github.com/danielalejandroamaro/gitlab-pipeline/commits/0.0.1
