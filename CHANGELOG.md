@@ -21,8 +21,6 @@ Suite de cambios sobre el tool window: nuevo **tab "Releases"** con sus assets a
 
 ## [0.0.15] - 2026-06-19
 
-## [0.0.15] - 2026-06-19
-
 Descarga **inline de artifacts de jobs** desde el tool window de pipelines, sin tener que abrir GitLab en el navegador. El job que produjo artifacts ahora muestra un icono ⬇ en el extremo derecho de su row del tree (mismo patrón visual del icono de copiar que ya tenían los pipelines de tag); un click izquierdo sobre el icono abre el `FileSaverDialog` con el filename real del archivo (o `artifacts.zip` como fallback) y, tras elegir destino, descarga el zip en background con una balloon de éxito/error al terminar. El click-derecho sobre un job con artifacts agrega arriba del menú existente la entrada "Descargar artifacts (X MB)" como ruta alternativa al mismo flujo.
 
 - **Modelo `Job` extendido con metadatos de artifacts** (`src/main/kotlin/com/github/danielalejandroamaro/gitlabpipeline/model/Pipeline.kt:45`) — nuevos campos `artifactsFilename: String?` y `artifactsSize: Long?` (ambos nullables porque no todos los jobs los tienen) más el helper derivado `val hasArtifacts: Boolean get() = artifactsFilename != null`. El filename siembra el Save dialog y el tamaño aparece en el tooltip ("descargar artifacts (filename · 2.3 MB)").
@@ -249,7 +247,8 @@ Primera release publicable. El proyecto pasa de scaffold de [IntelliJ Platform P
 
 - **Sideload local** — zip empaquetable con `./gradlew buildPlugin` en `build/distributions/gitlab-pipeline-watcher-0.0.1.zip` (~84 KB). Probado contra IntelliJ IDEA 2026.1 Ultimate, PyCharm 2026.1 y WebStorm 2026.1 — el plugin carga sin restart (`Plugin com.github.danielalejandroamaro.gitlabpipeline loaded without restart in 16 ms` en `idea.log`).
 
-[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.15...HEAD
+[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.16...HEAD
+[0.0.16]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.15...0.0.16
 [0.0.15]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.14...0.0.15
 [0.0.14]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.13...0.0.14
 [0.0.13]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.12...0.0.13
