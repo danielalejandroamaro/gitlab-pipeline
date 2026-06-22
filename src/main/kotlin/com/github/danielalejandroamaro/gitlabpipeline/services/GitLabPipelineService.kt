@@ -5,6 +5,7 @@ import com.github.danielalejandroamaro.gitlabpipeline.api.GitLabApiClient
 import com.github.danielalejandroamaro.gitlabpipeline.auth.GitLabAuthBridge
 import com.github.danielalejandroamaro.gitlabpipeline.model.Pipeline
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
+import com.github.danielalejandroamaro.gitlabpipeline.model.Release
 import com.github.danielalejandroamaro.gitlabpipeline.model.StageSummary
 import com.github.danielalejandroamaro.gitlabpipeline.settings.PipelineSettings
 import com.intellij.notification.NotificationGroupManager
@@ -51,6 +52,8 @@ class GitLabPipelineService(
         val isRefreshing: Boolean = false,
         /** Epoch millis of the last completed refresh (manual or auto). 0 = never. */
         val lastRefreshedAt: Long = 0L,
+        /** Releases of the project, newest first. Refreshed in the same tick as pipelines. */
+        val releases: List<Release> = emptyList(),
     )
 
     private val _state = MutableStateFlow(State(ciEnabled = GitLabCiDetector.hasCiFile(project)))
@@ -91,6 +94,8 @@ class GitLabPipelineService(
      */
     private val notifiedStartedIds = mutableSetOf<Long>()
     private val notifiedTerminalIds = mutableSetOf<Long>()
+    /** Release tag names we've already balloon'd. Same dedupe idea as pipelines. */
+    private val notifiedReleaseTags = mutableSetOf<String>()
     /** False until the first successful list fetch lands. Suppresses notifications for the historic backlog at project open. */
     @Volatile private var firstFetchSeeded = false
 
@@ -119,6 +124,35 @@ class GitLabPipelineService(
         val client = cachedClient ?: return false
         val pid = cachedProjectId ?: return false
         return client.downloadArtifacts(pid, jobId, dest)
+    }
+
+    /** List releases of the resolved project. Null if the service hasn't done its first refresh. */
+    fun fetchReleases(): List<Release>? {
+        val client = cachedClient ?: return null
+        val pid = cachedProjectId ?: return null
+        return client.listReleases(pid)
+    }
+
+    /** Stream any URL (release asset, etc.) to [dest] using the configured token. */
+    fun downloadFromUrl(url: String, dest: java.io.File): Boolean {
+        val client = cachedClient ?: return false
+        return client.downloadUrl(url, dest)
+    }
+
+    /**
+     * Delete a pipeline (cascades to its jobs + artifacts) and, optionally, the tag that
+     * triggered it. Returns Pair(pipelineDeleted, tagDeleted). Caller is on a background thread.
+     * ponytail: no rollback — if pipeline deletes but tag-delete fails, user sees both results
+     * in the balloon and can retry the tag from GitLab UI.
+     */
+    fun deletePipelineAndTag(pipelineId: Long, tagName: String?): Pair<Boolean, Boolean?> {
+        val client = cachedClient ?: return false to null
+        val pid = cachedProjectId ?: return false to null
+        val pipelineOk = client.deletePipeline(pid, pipelineId)
+        val tagOk = tagName?.let { client.deleteTag(pid, it) }
+        notifiedStartedIds -= pipelineId
+        notifiedTerminalIds -= pipelineId
+        return pipelineOk to tagOk
     }
 
     /**
@@ -202,13 +236,43 @@ class GitLabPipelineService(
         }
         clearErrorDedupe()
         val previousById = _state.value.pipelines.associateBy { it.id }
+        // Pull releases in the same tick — one extra GET per refresh. Failures are non-fatal:
+        // we keep the previous list so a transient blip doesn't blank the Releases tab.
+        val releases = client.listReleases(projectId) ?: _state.value.releases
         _state.value = _state.value.copy(
             errorMessage = null,
             pipelines = pipelines,
+            releases = releases,
             lastRefreshedAt = System.currentTimeMillis(),
         )
         emitListDeltaNotifications(pipelines, previousById)
+        emitReleaseDeltaNotifications(releases)
         return client to projectId
+    }
+
+    /**
+     * Balloon when a new release tag shows up. Same first-fetch suppression as pipelines:
+     * we don't spam the user with the historic backlog the first time we see the list.
+     */
+    private fun emitReleaseDeltaNotifications(releases: List<Release>) {
+        if (notifiedReleaseTags.isEmpty() && releases.isNotEmpty() && !firstFetchSeeded) {
+            // Seed alongside pipelines — firstFetchSeeded is flipped by emitListDeltaNotifications,
+            // so this branch only runs when releases land before pipelines (rare). Keeps the same
+            // "no backlog spam at project open" guarantee.
+            releases.forEach { notifiedReleaseTags += it.tagName }
+            return
+        }
+        if (notifiedReleaseTags.isEmpty()) {
+            // Pipelines seeded first — adopt the current set as baseline without notifying.
+            releases.forEach { notifiedReleaseTags += it.tagName }
+            return
+        }
+        for (r in releases) {
+            if (notifiedReleaseTags.add(r.tagName)) {
+                notify("Nuevo release detectado: ${r.tagName}", NotificationType.INFORMATION)
+                eventLog.info("Release ${r.tagName} detected (${r.assets.size} assets)")
+            }
+        }
     }
 
     /**

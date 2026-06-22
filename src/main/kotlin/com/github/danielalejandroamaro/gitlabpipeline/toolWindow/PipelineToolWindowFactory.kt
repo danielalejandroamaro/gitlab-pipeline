@@ -67,9 +67,11 @@ class PipelineToolWindowFactory : ToolWindowFactory {
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val pipelinesPanel = PipelinePanel(project)
+        val releasesPanel = ReleasesTabPanel(project)
         val eventLogPanel = EventLogTabPanel(project)
         val cf = ContentFactory.getInstance()
         toolWindow.contentManager.addContent(cf.createContent(pipelinesPanel.root, "Pipelines", false))
+        toolWindow.contentManager.addContent(cf.createContent(releasesPanel.root, "Releases", false))
         toolWindow.contentManager.addContent(cf.createContent(eventLogPanel.root, "Logs", false))
     }
 }
@@ -167,12 +169,20 @@ private class PipelinePanel(private val project: Project) {
     }
 
     private val refreshButton = JButton(MyBundle["toolWindow.refresh"]).apply {
+        toolTipText = "Refresh completo: re-fetch de pipelines + jobs + artifacts " +
+            "(incluyendo pipelines terminales). Útil cuando algo cambia o se borra en GitLab y " +
+            "el polling ligero (cada 3s) no lo refleja."
         addActionListener {
+            // DEEP refresh — distinto del auto-loop ligero cada 3s:
+            //  1. limpia jobsCache local entero (el polling solo refresca los expandidos
+            //     no-followed y no-terminales; los demás quedan cacheados).
+            //  2. dispara service.refresh() para re-traer la lista de pipelines.
+            //  3. re-fetch jobs de TODOS los pipelines expandidos sin filtros (incluye
+            //     followed y terminales) — así reflejamos artifacts nuevos/eliminados y
+            //     cambios en jobs ya terminados.
+            jobsCache.clear()
             service.refresh()
-            // Manual refresh also force-refreshes the jobs of any currently-expanded pipeline.
-            // The background loop already does this every 3s, but firing it on click gives the
-            // user immediate feedback instead of "click, wait, see nothing change".
-            scope.launch { refreshExpandedNonFollowedJobs() }
+            scope.launch { refreshExpandedJobsDeep() }
         }
     }
 
@@ -284,9 +294,35 @@ private class PipelinePanel(private val project: Project) {
                     return@withContext
                 }
                 jobsCache[id] = jobs
-                attachJobs(node, jobs)
-                treeModel.reload(node)
-                tree.expandPath(TreePath(node.path))
+                val newRows: List<Any> = if (jobs.isEmpty()) listOf(EmptyRow) else jobs.map { JobRow(it) }
+                swapChildren(node, newRows)
+            }
+        }
+    }
+
+    /**
+     * Deep variant of [refreshExpandedNonFollowedJobs]: re-fetches jobs of EVERY expanded
+     * pipeline regardless of state (followed, terminal, etc.). Triggered by the manual
+     * Refresh button so the user can pull GitLab-side changes that the light polling skips
+     * (artifacts uploaded after a job finished, jobs deleted manually, etc.).
+     */
+    private suspend fun refreshExpandedJobsDeep() {
+        val candidates = mutableListOf<Pair<DefaultMutableTreeNode, Long>>()
+        withContext(Dispatchers.Main) {
+            for (i in 0 until rootNode.childCount) {
+                val child = rootNode.getChildAt(i) as DefaultMutableTreeNode
+                val row = child.userObject as? PipelineRow ?: continue
+                if (!tree.isExpanded(TreePath(child.path))) continue
+                candidates += child to row.pipeline.id
+            }
+        }
+        for ((node, id) in candidates) {
+            val jobs = withContext(Dispatchers.IO) { service.fetchJobs(id) } ?: continue
+            withContext(Dispatchers.Main) {
+                jobsCache[id] = jobs
+                if (!tree.isExpanded(TreePath(node.path))) return@withContext
+                val newRows: List<Any> = if (jobs.isEmpty()) listOf(EmptyRow) else jobs.map { JobRow(it) }
+                swapChildren(node, newRows)
             }
         }
     }
@@ -331,6 +367,13 @@ private class PipelinePanel(private val project: Project) {
                         addActionListener { BrowserUtil.browse(p.webUrl) }
                     })
                 }
+                menu.addSeparator()
+                val tagLabel = p.ref?.takeIf { p.tag && it.isNotBlank() }
+                val deleteLabel = if (tagLabel != null) "Borrar pipeline #${p.id} + tag $tagLabel"
+                                  else "Borrar pipeline #${p.id}"
+                menu.add(JMenuItem(deleteLabel, AllIcons.Actions.GC).apply {
+                    addActionListener { confirmAndDelete(p) }
+                })
             }
             is JobRow -> {
                 val j = data.job
@@ -358,6 +401,47 @@ private class PipelinePanel(private val project: Project) {
     }
 
     private fun copyTagToClipboard(tag: String) = copyToClipboard(tag, "tag $tag")
+
+    /**
+     * Confirm with the user, then delete the pipeline (and its tag if it's a tag pipeline)
+     * on a background thread. Refresh on success so the row disappears from the tree.
+     */
+    private fun confirmAndDelete(p: Pipeline) {
+        val tagName = p.ref?.takeIf { p.tag && it.isNotBlank() }
+        val target = if (tagName != null) "pipeline #${p.id} y el tag $tagName"
+                     else "pipeline #${p.id}"
+        val ok = com.intellij.openapi.ui.Messages.showYesNoDialog(
+            project,
+            "Vas a borrar $target en GitLab.\n" +
+                "Esto incluye los jobs y sus artifacts. La acción no se puede deshacer.\n\n" +
+                "¿Continuar?",
+            "Borrar pipeline",
+            com.intellij.openapi.ui.Messages.getWarningIcon(),
+        )
+        if (ok != com.intellij.openapi.ui.Messages.YES) return
+        scope.launch(Dispatchers.IO) {
+            val (pipelineOk, tagOk) = service.deletePipelineAndTag(p.id, tagName)
+            ApplicationManager.getApplication().invokeLater {
+                val parts = mutableListOf<String>()
+                parts += if (pipelineOk) "pipeline #${p.id} borrado" else "no se pudo borrar pipeline #${p.id}"
+                if (tagName != null) {
+                    parts += when (tagOk) {
+                        true -> "tag $tagName borrado"
+                        false -> "no se pudo borrar tag $tagName"
+                        null -> "tag $tagName no intentado"
+                    }
+                }
+                val anyFail = !pipelineOk || tagOk == false
+                val type = if (anyFail) com.intellij.notification.NotificationType.ERROR
+                           else com.intellij.notification.NotificationType.INFORMATION
+                com.intellij.notification.NotificationGroupManager.getInstance()
+                    .getNotificationGroup("GitLab Pipeline Watcher")
+                    .createNotification(parts.joinToString(" · "), type)
+                    .notify(project)
+                if (pipelineOk) service.refresh()
+            }
+        }
+    }
 
     /**
      * Open a Save dialog seeded with the artifacts filename, then stream the zip from GitLab
@@ -408,11 +492,26 @@ private class PipelinePanel(private val project: Project) {
             .notify(project)
     }
 
+    /**
+     * A tag-pipeline is "stale" (its tag has been repointed since this run) when there's a
+     * newer pipeline with the same tag ref. Computed purely from the local list — no extra
+     * API calls. ponytail: assumes the per_page=20 window is enough to see the retag; if a
+     * retag happens long after the original pipeline scrolled off the window, we miss it.
+     */
+    private fun computeStaleTagIds(pipelines: List<Pipeline>): Set<Long> {
+        val byRef = pipelines.filter { it.tag && !it.ref.isNullOrBlank() }.groupBy { it.ref!! }
+        return byRef.values.flatMap { group ->
+            if (group.size <= 1) emptyList()
+            else group.sortedByDescending { it.id }.drop(1).map { it.id }
+        }.toSet()
+    }
+
     private fun rebuildTree(pipelines: List<Pipeline>) {
         snapshotExpansion()
         rootNode.removeAllChildren()
+        val staleIds = computeStaleTagIds(pipelines)
         for (p in pipelines) {
-            val pipelineNode = DefaultMutableTreeNode(PipelineRow(p))
+            val pipelineNode = DefaultMutableTreeNode(PipelineRow(p, staleTag = p.id in staleIds))
             val cachedJobs = jobsCache[p.id]
             if (cachedJobs != null) {
                 attachJobs(pipelineNode, cachedJobs)
@@ -451,6 +550,26 @@ private class PipelinePanel(private val project: Project) {
         }
     }
 
+    /**
+     * Replace a node's children using fine-grained model events instead of [DefaultTreeModel.reload].
+     * `reload(node)` fires `treeStructureChanged`, which most L&Fs handle by collapsing the subtree
+     * — and even with a follow-up `expandPath` that produced a visible "spinner gone → empty →
+     * content" flash when the LoadingRow got replaced. `nodesWereRemoved` + `nodesWereInserted`
+     * keep the expansion state intact, so the LoadingRow swaps to JobRows in one paint cycle.
+     */
+    private fun swapChildren(parent: DefaultMutableTreeNode, newRows: List<Any>) {
+        val oldCount = parent.childCount
+        if (oldCount > 0) {
+            val removed = Array<Any>(oldCount) { parent.getChildAt(it) }
+            val indices = IntArray(oldCount) { it }
+            parent.removeAllChildren()
+            treeModel.nodesWereRemoved(parent, indices, removed)
+        }
+        if (newRows.isEmpty()) return
+        for (row in newRows) parent.add(DefaultMutableTreeNode(row))
+        treeModel.nodesWereInserted(parent, IntArray(newRows.size) { it })
+    }
+
     private fun maybeLoadJobs(pipelineNode: DefaultMutableTreeNode, pipelineId: Long) {
         val first = pipelineNode.getChildAt(0) as? DefaultMutableTreeNode
         if (first != null && first.userObject !is LoadingRow) return
@@ -459,8 +578,10 @@ private class PipelinePanel(private val project: Project) {
             val jobs = service.fetchJobs(pipelineId).orEmpty()
             ApplicationManager.getApplication().invokeLater {
                 jobsCache[pipelineId] = jobs
-                attachJobs(pipelineNode, jobs)
-                treeModel.reload(pipelineNode)
+                // Use fine-grained events so the LoadingRow → JobRows swap doesn't collapse the
+                // pipeline node mid-expand (which previously left a one-frame blank gap).
+                val newRows: List<Any> = if (jobs.isEmpty()) listOf(EmptyRow) else jobs.map { JobRow(it) }
+                swapChildren(pipelineNode, newRows)
                 tree.expandPath(TreePath(pipelineNode.path))
                 loadingPipelineIds -= pipelineId
             }
@@ -484,7 +605,7 @@ private class PipelinePanel(private val project: Project) {
 }
 
 private sealed class TreeRow
-private data class PipelineRow(val pipeline: Pipeline) : TreeRow()
+private data class PipelineRow(val pipeline: Pipeline, val staleTag: Boolean = false) : TreeRow()
 private data class JobRow(val job: PipelineJob) : TreeRow()
 private object LoadingRow : TreeRow()
 private object EmptyRow : TreeRow()
@@ -511,11 +632,17 @@ private class PipelineTreeRenderer : ColoredTreeCellRenderer() {
                 // click can copy it directly without the user having to scan past the id first.
                 val action = p.source ?: "push"
                 val version = p.ref?.takeIf { it.isNotBlank() } ?: p.sha?.take(8) ?: "?"
-                append("$action/$version", SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                val versionAttrs = if (data.staleTag) {
+                    SimpleTextAttributes(SimpleTextAttributes.STYLE_STRIKEOUT, null)
+                } else SimpleTextAttributes.REGULAR_ATTRIBUTES
+                append("$action/$version", versionAttrs)
+                if (data.staleTag) append("  (tag desapuntado)", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 append("  #${p.id}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 if (p.tag && !p.ref.isNullOrBlank()) {
                     paintCopyIcon = true
-                    toolTipText = "Doble click copia la versión (${p.ref}); click-derecho para navegar"
+                    toolTipText = if (data.staleTag)
+                        "Tag ${p.ref} fue reapuntado a otro commit; este pipeline es histórico."
+                    else "Doble click copia la versión (${p.ref}); click-derecho para navegar"
                 } else if (!p.ref.isNullOrBlank()) {
                     toolTipText = "Doble click copia la versión (${p.ref}); click-derecho para navegar"
                 }
@@ -596,7 +723,10 @@ private class PipelineTreeRenderer : ColoredTreeCellRenderer() {
     }
 
     private companion object {
-        private const val COPY_ICON_RIGHT_PAD_PX = 4
+        // Right padding bumped to 12 so the inline icon sits visually inside the row's hover/
+        // selection highlight instead of hugging the cell's right edge (where it looked clipped
+        // outside the highlight on dark themes).
+        private const val COPY_ICON_RIGHT_PAD_PX = 12
         private const val COPY_ICON_LEFT_PAD_PX = 8
         private const val COPY_ICON_TOTAL_PADDING = COPY_ICON_LEFT_PAD_PX + COPY_ICON_RIGHT_PAD_PX
     }

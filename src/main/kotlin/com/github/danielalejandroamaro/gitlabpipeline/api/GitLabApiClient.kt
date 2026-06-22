@@ -3,6 +3,8 @@ package com.github.danielalejandroamaro.gitlabpipeline.api
 import com.github.danielalejandroamaro.gitlabpipeline.model.Job
 import com.github.danielalejandroamaro.gitlabpipeline.model.Pipeline
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
+import com.github.danielalejandroamaro.gitlabpipeline.model.Release
+import com.github.danielalejandroamaro.gitlabpipeline.model.ReleaseAsset
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.util.io.HttpRequests
 import com.google.gson.JsonParser
@@ -174,6 +176,107 @@ class GitLabApiClient(
                 .saveToFile(dest, null)
             true
         }.onFailure { logger.warn("downloadArtifacts($projectId,$jobId) failed: ${it.message}") }
+            .getOrDefault(false)
+    }
+
+    /**
+     * Releases of the project (newest first). Each release carries its source archives,
+     * custom package links, and evidence files. Returns null on transient failure.
+     */
+    fun listReleases(projectId: Long, perPage: Int = 20): List<Release>? {
+        val url = "$serverUrl/api/v4/projects/$projectId/releases?per_page=$perPage"
+        return runCatching {
+            val body = get(url)
+            JsonParser.parseString(body).asJsonArray.map { it.asJsonObject }.map { obj ->
+                val assets = obj["assets"]?.takeIf { !it.isJsonNull }?.asJsonObject
+                val sources = assets?.get("sources")?.takeIf { !it.isJsonNull }?.asJsonArray
+                    ?.map { it.asJsonObject }?.map { s ->
+                        ReleaseAsset(
+                            name = "Source code (${s["format"]?.asString ?: "?"})",
+                            url = s["url"]?.asString.orEmpty(),
+                            kind = com.github.danielalejandroamaro.gitlabpipeline.model.ReleaseAssetKind.SOURCE,
+                        )
+                    }.orEmpty()
+                val links = assets?.get("links")?.takeIf { !it.isJsonNull }?.asJsonArray
+                    ?.map { it.asJsonObject }?.map { l ->
+                        val linkType = l["link_type"]?.takeIf { !it.isJsonNull }?.asString ?: "other"
+                        val kind = if (linkType == "package")
+                            com.github.danielalejandroamaro.gitlabpipeline.model.ReleaseAssetKind.PACKAGE
+                        else com.github.danielalejandroamaro.gitlabpipeline.model.ReleaseAssetKind.OTHER
+                        val urlStr = l["url"]?.asString.orEmpty()
+                        val direct = l["direct_asset_url"]?.takeIf { !it.isJsonNull }?.asString
+                        ReleaseAsset(
+                            name = l["name"]?.asString ?: "(unnamed)",
+                            url = urlStr,
+                            kind = kind,
+                            downloadUrl = direct ?: urlStr,
+                        )
+                    }.orEmpty()
+                val evidences = obj["evidences"]?.takeIf { !it.isJsonNull }?.asJsonArray
+                    ?.map { it.asJsonObject }?.map { e ->
+                        ReleaseAsset(
+                            name = "Evidence ${e["sha"]?.asString?.take(8) ?: ""}".trim(),
+                            url = e["filepath"]?.takeIf { !it.isJsonNull }?.asString.orEmpty(),
+                            kind = com.github.danielalejandroamaro.gitlabpipeline.model.ReleaseAssetKind.EVIDENCE,
+                        )
+                    }.orEmpty()
+                Release(
+                    name = obj["name"]?.asString ?: "(unnamed)",
+                    tagName = obj["tag_name"]?.asString ?: "?",
+                    description = obj["description"]?.takeIf { !it.isJsonNull }?.asString,
+                    releasedAt = obj["released_at"]?.takeIf { !it.isJsonNull }?.asString,
+                    assets = sources + links + evidences,
+                )
+            }
+        }.onFailure { logger.warn("listReleases($projectId) failed: ${it.message}") }
+            .getOrNull()
+    }
+
+    /** Stream an arbitrary URL (assumed same-host) to disk using the configured token. */
+    fun downloadUrl(url: String, dest: File): Boolean =
+        runCatching {
+            HttpRequests.request(url)
+                .tuner { conn -> conn.setRequestProperty("PRIVATE-TOKEN", token) }
+                .saveToFile(dest, null)
+            true
+        }.onFailure { logger.warn("downloadUrl($url) failed: ${it.message}") }
+            .getOrDefault(false)
+
+    /**
+     * Delete a pipeline. GitLab cascades: jobs + their artifacts go with it.
+     * Returns true on 2xx. The caller is expected to refresh the list afterwards.
+     */
+    fun deletePipeline(projectId: Long, pipelineId: Long): Boolean {
+        val url = "$serverUrl/api/v4/projects/$projectId/pipelines/$pipelineId"
+        return runCatching {
+            HttpRequests.request(url)
+                .tuner { conn ->
+                    conn.setRequestProperty("PRIVATE-TOKEN", token)
+                    (conn as java.net.HttpURLConnection).requestMethod = "DELETE"
+                }
+                .connect { req ->
+                    val code = (req.connection as java.net.HttpURLConnection).responseCode
+                    code in 200..299
+                }
+        }.onFailure { logger.warn("deletePipeline($projectId,$pipelineId) failed: ${it.message}") }
+            .getOrDefault(false)
+    }
+
+    /** Delete a tag from the project repo. Returns true on 2xx. */
+    fun deleteTag(projectId: Long, tagName: String): Boolean {
+        val encoded = URLEncoder.encode(tagName, Charsets.UTF_8)
+        val url = "$serverUrl/api/v4/projects/$projectId/repository/tags/$encoded"
+        return runCatching {
+            HttpRequests.request(url)
+                .tuner { conn ->
+                    conn.setRequestProperty("PRIVATE-TOKEN", token)
+                    (conn as java.net.HttpURLConnection).requestMethod = "DELETE"
+                }
+                .connect { req ->
+                    val code = (req.connection as java.net.HttpURLConnection).responseCode
+                    code in 200..299
+                }
+        }.onFailure { logger.warn("deleteTag($projectId,$tagName) failed: ${it.message}") }
             .getOrDefault(false)
     }
 
