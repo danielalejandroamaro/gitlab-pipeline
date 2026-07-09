@@ -22,15 +22,18 @@ class GitLabApiClient(
 
     private val logger = thisLogger()
 
-    /** Resolve `namespace/project` (URL-encoded) into a numeric project id. */
-    fun resolveProjectId(projectPath: String): Long? {
+    /**
+     * Resolve `namespace/project` (URL-encoded) into a numeric project id. Returns Result so
+     * the caller can tell a real 404 (project missing / token lacks access) from a transient
+     * network failure — they deserve different UX (error balloon vs silent retry).
+     */
+    fun resolveProjectId(projectPath: String): Result<Long> {
         val encoded = URLEncoder.encode(projectPath, Charsets.UTF_8)
         val url = "$serverUrl/api/v4/projects/$encoded"
         return runCatching {
             val body = get(url)
-            JsonParser.parseString(body).asJsonObject.get("id")?.asLong
+            JsonParser.parseString(body).asJsonObject.get("id").asLong
         }.onFailure { logger.warn("resolveProjectId($projectPath) failed: ${it.message}") }
-            .getOrNull()
     }
 
     /**
@@ -259,6 +262,30 @@ class GitLabApiClient(
                     code in 200..299
                 }
         }.onFailure { logger.warn("deletePipeline($projectId,$pipelineId) failed: ${it.message}") }
+            .getOrDefault(false)
+    }
+
+    /**
+     * Delete a release by tag name. Returns true on 2xx.
+     * ponytail: GitLab keeps the release's generic-package binaries in the package registry —
+     * this only nukes the Release entity (metadata + links + auto evidence/source archives).
+     * Upgrade path: enumerate `/projects/:id/packages?package_version=<tag>` and DELETE each
+     * package id if Dno wants reclaiming the binary storage too.
+     */
+    fun deleteRelease(projectId: Long, tagName: String): Boolean {
+        val encoded = URLEncoder.encode(tagName, Charsets.UTF_8)
+        val url = "$serverUrl/api/v4/projects/$projectId/releases/$encoded"
+        return runCatching {
+            HttpRequests.request(url)
+                .tuner { conn ->
+                    conn.setRequestProperty("PRIVATE-TOKEN", token)
+                    (conn as java.net.HttpURLConnection).requestMethod = "DELETE"
+                }
+                .connect { req ->
+                    val code = (req.connection as java.net.HttpURLConnection).responseCode
+                    code in 200..299
+                }
+        }.onFailure { logger.warn("deleteRelease($projectId,$tagName) failed: ${it.message}") }
             .getOrDefault(false)
     }
 

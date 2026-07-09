@@ -246,10 +246,60 @@ class ReleasesTabPanel(private val project: Project) {
                         CopyPasteManager.getInstance().setContents(StringSelection(data.release.tagName))
                     }
                 })
+                menu.addSeparator()
+                menu.add(JMenuItem("Borrar release ${data.release.tagName}", AllIcons.Actions.GC).apply {
+                    addActionListener { confirmAndDeleteRelease(data.release, alsoTag = false) }
+                })
+                menu.add(JMenuItem("Borrar release ${data.release.tagName} + tag", AllIcons.Actions.GC).apply {
+                    addActionListener { confirmAndDeleteRelease(data.release, alsoTag = true) }
+                })
             }
             is AssetGroupRow -> {} // group nodes have no contextual actions
         }
         if (menu.componentCount > 0) menu.show(tree, e.x, e.y)
+    }
+
+    /**
+     * Confirm with the user, then delete the release (and optionally the tag) on a background
+     * thread. Refresh on success so the row disappears from the tree.
+     * ponytail: no per-package purge — the generic-package binaries stay in the registry; if
+     * Dno wants reclaiming that storage too, extend the service to enumerate+delete packages.
+     */
+    private fun confirmAndDeleteRelease(release: Release, alsoTag: Boolean) {
+        val target = if (alsoTag) "el release ${release.tagName} y el tag ${release.tagName}"
+                     else "el release ${release.tagName}"
+        val ok = com.intellij.openapi.ui.Messages.showYesNoDialog(
+            project,
+            "Vas a borrar $target en GitLab.\n" +
+                "Nota: los packages binarios (Generic Packages) NO se borran con esto; viven en el " +
+                "Package Registry y se purgan aparte.\n\n" +
+                "¿Continuar?",
+            "Borrar release",
+            com.intellij.openapi.ui.Messages.getWarningIcon(),
+        )
+        if (ok != com.intellij.openapi.ui.Messages.YES) return
+        scope.launch(Dispatchers.IO) {
+            val (releaseOk, tagOk) = service.deleteReleaseAndTag(release.tagName, alsoTag)
+            ApplicationManager.getApplication().invokeLater {
+                val parts = mutableListOf<String>()
+                parts += if (releaseOk) "release ${release.tagName} borrado"
+                         else "no se pudo borrar release ${release.tagName}"
+                if (alsoTag) {
+                    parts += when (tagOk) {
+                        true -> "tag ${release.tagName} borrado"
+                        false -> "no se pudo borrar tag ${release.tagName}"
+                        null -> "tag ${release.tagName} no intentado"
+                    }
+                }
+                val anyFail = !releaseOk || tagOk == false
+                val type = if (anyFail) NotificationType.ERROR else NotificationType.INFORMATION
+                NotificationGroupManager.getInstance()
+                    .getNotificationGroup("GitLab Pipeline Watcher")
+                    .createNotification(parts.joinToString(" · "), type)
+                    .notify(project)
+                if (releaseOk) service.refresh()
+            }
+        }
     }
 
     private fun downloadAsset(asset: ReleaseAsset) {

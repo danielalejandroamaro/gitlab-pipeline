@@ -12,6 +12,13 @@ data class GitLabRemote(
 object GitRemoteResolver {
 
     /**
+     * False while git4idea is still initializing repos at IDE startup. Callers treat that as
+     * transient ("retry next tick"), not as a missing-remote configuration error.
+     */
+    fun reposLoaded(project: Project): Boolean =
+        GitRepositoryManager.getInstance(project).repositories.isNotEmpty()
+
+    /**
      * Pick the first git remote whose host matches a configured GitLab account.
      * Falls back to "origin" when no account match is found, so users on the very
      * first run still see something.

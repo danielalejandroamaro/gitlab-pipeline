@@ -511,8 +511,11 @@ private class PipelinePanel(private val project: Project) {
         rootNode.removeAllChildren()
         val staleIds = computeStaleTagIds(pipelines)
         for (p in pipelines) {
-            val pipelineNode = DefaultMutableTreeNode(PipelineRow(p, staleTag = p.id in staleIds))
             val cachedJobs = jobsCache[p.id]
+            val mixed = cachedJobs?.let { computeMixedAmber(it) } ?: false
+            val pipelineNode = DefaultMutableTreeNode(
+                PipelineRow(p, staleTag = p.id in staleIds, mixedAmber = mixed),
+            )
             if (cachedJobs != null) {
                 attachJobs(pipelineNode, cachedJobs)
             } else {
@@ -605,10 +608,33 @@ private class PipelinePanel(private val project: Project) {
 }
 
 private sealed class TreeRow
-private data class PipelineRow(val pipeline: Pipeline, val staleTag: Boolean = false) : TreeRow()
+private data class PipelineRow(
+    val pipeline: Pipeline,
+    val staleTag: Boolean = false,
+    /** True when the latest stage succeeded but an earlier stage failed — render row as amber. */
+    val mixedAmber: Boolean = false,
+) : TreeRow()
 private data class JobRow(val job: PipelineJob) : TreeRow()
 private object LoadingRow : TreeRow()
 private object EmptyRow : TreeRow()
+
+/**
+ * Returns true when the chronologically last stage of [jobs] is SUCCESS but some earlier stage
+ * is FAILED — the "partial success" case the user wants painted amber instead of red. Empty or
+ * single-stage pipelines never qualify. ponytail: timestamp comparison is string-based on the
+ * ISO-8601 strings GitLab returns; cheap and correct since they share zone (Z).
+ */
+internal fun computeMixedAmber(jobs: List<PipelineJob>): Boolean {
+    if (jobs.isEmpty()) return false
+    val stages = jobs.groupBy { it.stage }
+        .map { (name, js) -> StageSummary.fromJobs(name, js) }
+    if (stages.size < 2) return false
+    val last = stages.maxByOrNull { st ->
+        st.jobs.mapNotNull { it.finishedAt ?: it.startedAt }.maxOrNull() ?: ""
+    } ?: return false
+    if (last.status != PipelineStatus.SUCCESS) return false
+    return stages.any { it !== last && it.status == PipelineStatus.FAILED }
+}
 
 private class PipelineTreeRenderer : ColoredTreeCellRenderer() {
 
@@ -627,7 +653,7 @@ private class PipelineTreeRenderer : ColoredTreeCellRenderer() {
         when (val data = node.userObject) {
             is PipelineRow -> {
                 val p = data.pipeline
-                icon = iconFor(p.status)
+                icon = if (data.mixedAmber) ColoredDotIcon.AMBER else iconFor(p.status)
                 // Format: "action/version  #id" — the version is the ref/tag/branch, so a double
                 // click can copy it directly without the user having to scan past the id first.
                 val action = p.source ?: "push"

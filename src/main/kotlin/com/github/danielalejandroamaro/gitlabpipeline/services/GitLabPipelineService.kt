@@ -16,6 +16,7 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.util.io.HttpRequests
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -86,6 +87,8 @@ class GitLabPipelineService(
     /** Cached client + project id after the first successful resolve, so [fetchJobTrace] can hit the API without re-doing the lookup chain on every poll tick. */
     @Volatile private var cachedClient: GitLabApiClient? = null
     @Volatile private var cachedProjectId: Long? = null
+    /** `serverUrl|projectPath` the cached id belongs to; invalidates the cache if account/remote changes. */
+    @Volatile private var cachedProjectKey: String? = null
 
     /**
      * Tracks pipeline ids we've already announced (started/detected) so the auto-refresh loop
@@ -156,6 +159,20 @@ class GitLabPipelineService(
     }
 
     /**
+     * Delete a Release (metadata) and, optionally, the underlying tag. Returns
+     * Pair(releaseDeleted, tagDeleted). ponytail: doesn't reclaim generic-package binaries —
+     * those live in the package registry, see GitLabApiClient.deleteRelease comment.
+     */
+    fun deleteReleaseAndTag(tagName: String, alsoDeleteTag: Boolean): Pair<Boolean, Boolean?> {
+        val client = cachedClient ?: return false to null
+        val pid = cachedProjectId ?: return false to null
+        val releaseOk = client.deleteRelease(pid, tagName)
+        val tagOk = if (alsoDeleteTag) client.deleteTag(pid, tagName) else null
+        notifiedReleaseTags -= tagName
+        return releaseOk to tagOk
+    }
+
+    /**
      * Jobs for an arbitrary pipeline (not just the followed one). Used by the tool window tree
      * to lazy-load children when the user expands a pipeline node. Returns null if the service
      * hasn't done its first successful refresh yet (no cached client).
@@ -196,6 +213,11 @@ class GitLabPipelineService(
     private fun refreshNow(): Pair<GitLabApiClient, Long>? {
         val remote = GitRemoteResolver.resolve(project)
         if (remote == null) {
+            if (!GitRemoteResolver.reposLoaded(project)) {
+                // git4idea hasn't finished loading repos yet (IDE startup) — transient, retry next tick.
+                eventLog.warn("Git repositories not loaded yet; retrying on next refresh")
+                return null
+            }
             val msg = "No GitLab remote detected."
             _state.value = _state.value.copy(errorMessage = msg, pipelines = emptyList())
             notifyError("NO_REMOTE", msg)
@@ -216,12 +238,27 @@ class GitLabPipelineService(
             return null
         }
         val client = GitLabApiClient(account.serverUrl, token)
-        val projectId = client.resolveProjectId(remote.projectPath)
+        // Resolve the project id ONCE and reuse it — re-resolving every tick meant any network
+        // blip got misread as "project doesn't exist" and fired a red balloon per blip.
+        val projectKey = "${account.serverUrl}|${remote.projectPath}"
+        var projectId = cachedProjectId.takeIf { cachedProjectKey == projectKey }
         if (projectId == null) {
-            val msg = "Could not resolve project ${remote.projectPath} on ${account.serverUrl}."
-            _state.value = _state.value.copy(errorMessage = msg, pipelines = emptyList())
-            notifyError("NO_PROJECT", msg)
-            return null
+            val resolved = client.resolveProjectId(remote.projectPath)
+            projectId = resolved.getOrNull()
+            if (projectId == null) {
+                val status = (resolved.exceptionOrNull() as? HttpRequests.HttpStatusException)?.statusCode
+                if (status == 404) {
+                    // GitLab answered and said "not found" — real config problem (path or token scope).
+                    val msg = "Could not resolve project ${remote.projectPath} on ${account.serverUrl}."
+                    _state.value = _state.value.copy(errorMessage = msg, pipelines = emptyList())
+                    notifyError("NO_PROJECT", msg)
+                } else {
+                    // Couldn't reach GitLab at all — transient. Keep previous data, no balloon.
+                    eventLog.warn("GitLab unreachable (kept previous data); retrying on next refresh")
+                }
+                return null
+            }
+            cachedProjectKey = projectKey
         }
         cachedClient = client
         cachedProjectId = projectId
@@ -328,9 +365,10 @@ class GitLabPipelineService(
         }
         eventLog.info("Token present (length ${token.length})")
         val client = GitLabApiClient(account.serverUrl, token)
-        val projectId = client.resolveProjectId(remote.projectPath)
+        val resolved = client.resolveProjectId(remote.projectPath)
+        val projectId = resolved.getOrNull()
         if (projectId == null) {
-            eventLog.error("resolveProjectId returned null for ${remote.projectPath}")
+            eventLog.error("resolveProjectId failed for ${remote.projectPath}: ${resolved.exceptionOrNull()?.message}")
             return
         }
         eventLog.info("Resolved project id: $projectId")
