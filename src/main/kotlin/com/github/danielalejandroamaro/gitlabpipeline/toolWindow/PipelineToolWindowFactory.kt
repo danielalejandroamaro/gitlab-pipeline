@@ -155,13 +155,30 @@ private class PipelinePanel(private val project: Project) {
             }
             override fun treeWillCollapse(event: TreeExpansionEvent) {}
         })
+        // Track expansion by pipeline id via events instead of re-snapshotting the tree on each
+        // rebuild: `treeModel.reload()` collapses everything WITHOUT firing treeCollapsed, so a
+        // rebuild that lands mid-transient (Refresh chains cache-clear + several state emissions)
+        // could snapshot a collapsed/detached node and wipe the expansion memory. With events,
+        // only a real user collapse removes an id — rebuilds always re-expand what the user had.
+        addTreeExpansionListener(object : javax.swing.event.TreeExpansionListener {
+            override fun treeExpanded(event: TreeExpansionEvent) {
+                pipelineIdAt(event)?.let { expandedPipelineIds += it }
+            }
+            override fun treeCollapsed(event: TreeExpansionEvent) {
+                pipelineIdAt(event)?.let { expandedPipelineIds -= it }
+            }
+            private fun pipelineIdAt(event: TreeExpansionEvent): Long? {
+                val node = event.path.lastPathComponent as? DefaultMutableTreeNode ?: return null
+                return (node.userObject as? PipelineRow)?.pipeline?.id
+            }
+        })
     }
 
     /** Cached jobs by pipeline id so re-expanding (or a state-driven rebuild) doesn't re-fetch. */
     private val jobsCache = mutableMapOf<Long, List<PipelineJob>>()
     /** Pipeline ids with a fetch currently in flight — guards against repeated expand clicks. */
     private val loadingPipelineIds = mutableSetOf<Long>()
-    /** Pipeline ids currently expanded — preserved across model rebuilds driven by state ticks. */
+    /** Pipeline ids the user has expanded — kept by the TreeExpansionListener (only a real user collapse removes one), re-applied after every rebuild. */
     private val expandedPipelineIds = mutableSetOf<Long>()
 
     private val statusLabel = JBLabel("", SwingConstants.LEFT).apply {
@@ -174,13 +191,14 @@ private class PipelinePanel(private val project: Project) {
             "el polling ligero (cada 3s) no lo refleja."
         addActionListener {
             // DEEP refresh — distinto del auto-loop ligero cada 3s:
-            //  1. limpia jobsCache local entero (el polling solo refresca los expandidos
-            //     no-followed y no-terminales; los demás quedan cacheados).
+            //  1. suelta el jobsCache de los pipelines NO expandidos (re-fetch al expandir);
+            //     los expandidos conservan sus jobs visibles — el paso 3 los reemplaza in
+            //     situ sin pasar por LoadingRow, que era lo que colapsaba el nodo.
             //  2. dispara service.refresh() para re-traer la lista de pipelines.
             //  3. re-fetch jobs de TODOS los pipelines expandidos sin filtros (incluye
             //     followed y terminales) — así reflejamos artifacts nuevos/eliminados y
             //     cambios en jobs ya terminados.
-            jobsCache.clear()
+            jobsCache.keys.retainAll(expandedPipelineIds)
             service.refresh()
             scope.launch { refreshExpandedJobsDeep() }
         }
@@ -368,6 +386,16 @@ private class PipelinePanel(private val project: Project) {
                     })
                 }
                 menu.addSeparator()
+                if (p.status == PipelineStatus.FAILED || p.status == PipelineStatus.CANCELED) {
+                    menu.add(JMenuItem("Reintentar pipeline #${p.id}", AllIcons.Actions.Restart).apply {
+                        addActionListener { retryPipeline(p) }
+                    })
+                }
+                if (!p.ref.isNullOrBlank()) {
+                    menu.add(JMenuItem("Relanzar pipeline (nuevo run en ${p.ref})", AllIcons.Actions.Execute).apply {
+                        addActionListener { rerunPipeline(p) }
+                    })
+                }
                 val tagLabel = p.ref?.takeIf { p.tag && it.isNotBlank() }
                 val deleteLabel = if (tagLabel != null) "Borrar pipeline #${p.id} + tag $tagLabel"
                                   else "Borrar pipeline #${p.id}"
@@ -401,6 +429,52 @@ private class PipelinePanel(private val project: Project) {
     }
 
     private fun copyTagToClipboard(tag: String) = copyToClipboard(tag, "tag $tag")
+
+    /**
+     * Create a NEW pipeline run on the same ref (branch/tag) on a background thread. This is
+     * the "run again" for green pipelines — retry only covers failed/canceled jobs.
+     * Non-destructive, so no confirmation dialog. Refresh so the new run appears in the list.
+     */
+    private fun rerunPipeline(p: Pipeline) {
+        val ref = p.ref ?: return
+        scope.launch(Dispatchers.IO) {
+            val ok = service.createPipeline(ref)
+            ApplicationManager.getApplication().invokeLater {
+                val (msg, type) = if (ok) {
+                    "nuevo pipeline lanzado en $ref" to com.intellij.notification.NotificationType.INFORMATION
+                } else {
+                    "no se pudo lanzar pipeline en $ref" to com.intellij.notification.NotificationType.ERROR
+                }
+                com.intellij.notification.NotificationGroupManager.getInstance()
+                    .getNotificationGroup("GitLab Pipeline Watcher")
+                    .createNotification(msg, type)
+                    .notify(project)
+                if (ok) service.refresh()
+            }
+        }
+    }
+
+    /**
+     * Retry the failed/canceled jobs of a pipeline on a background thread. Non-destructive,
+     * so no confirmation dialog. Refresh on success so the row flips back to running.
+     */
+    private fun retryPipeline(p: Pipeline) {
+        scope.launch(Dispatchers.IO) {
+            val ok = service.retryPipeline(p.id)
+            ApplicationManager.getApplication().invokeLater {
+                val (msg, type) = if (ok) {
+                    "pipeline #${p.id} relanzado" to com.intellij.notification.NotificationType.INFORMATION
+                } else {
+                    "no se pudo relanzar pipeline #${p.id}" to com.intellij.notification.NotificationType.ERROR
+                }
+                com.intellij.notification.NotificationGroupManager.getInstance()
+                    .getNotificationGroup("GitLab Pipeline Watcher")
+                    .createNotification(msg, type)
+                    .notify(project)
+                if (ok) service.refresh()
+            }
+        }
+    }
 
     /**
      * Confirm with the user, then delete the pipeline (and its tag if it's a tag pipeline)
@@ -507,9 +581,42 @@ private class PipelinePanel(private val project: Project) {
     }
 
     private fun rebuildTree(pipelines: List<Pipeline>) {
-        snapshotExpansion()
-        rootNode.removeAllChildren()
         val staleIds = computeStaleTagIds(pipelines)
+        // In-place update when the pipeline list didn't change shape (the common case: the state
+        // flow ticks every few seconds with the same list). `reload()` collapses everything and
+        // the follow-up expandPath re-opens it — a visible open/close flicker on every tick.
+        // Updating userObjects + children in place fires no structure event, so expansion,
+        // selection and scroll survive untouched.
+        val sameShape = rootNode.childCount == pipelines.size && pipelines.withIndex().all { (i, p) ->
+            ((rootNode.getChildAt(i) as DefaultMutableTreeNode).userObject as? PipelineRow)?.pipeline?.id == p.id
+        }
+        if (sameShape) {
+            for ((i, p) in pipelines.withIndex()) {
+                val node = rootNode.getChildAt(i) as DefaultMutableTreeNode
+                val cachedJobs = jobsCache[p.id]
+                val newRow = PipelineRow(
+                    p,
+                    staleTag = p.id in staleIds,
+                    mixedAmber = cachedJobs?.let { computeMixedAmber(it) } ?: false,
+                )
+                if (node.userObject != newRow) {
+                    node.userObject = newRow
+                    treeModel.nodeChanged(node)
+                }
+                // Refresh children only if the cached jobs actually differ from what's shown —
+                // swapChildren preserves expansion, but not selection inside the subtree.
+                if (cachedJobs != null) {
+                    val newRows: List<Any> = if (cachedJobs.isEmpty()) listOf(EmptyRow)
+                                             else cachedJobs.map { JobRow(it) }
+                    val current = (0 until node.childCount)
+                        .map { (node.getChildAt(it) as DefaultMutableTreeNode).userObject }
+                    if (current != newRows) swapChildren(node, newRows)
+                }
+            }
+            return
+        }
+        // List changed (new/removed/reordered pipelines) — full rebuild + re-expand.
+        rootNode.removeAllChildren()
         for (p in pipelines) {
             val cachedJobs = jobsCache[p.id]
             val mixed = cachedJobs?.let { computeMixedAmber(it) } ?: false
@@ -530,15 +637,6 @@ private class PipelinePanel(private val project: Project) {
             if (expandedPipelineIds.contains(row.pipeline.id)) {
                 tree.expandPath(TreePath(child.path))
             }
-        }
-    }
-
-    private fun snapshotExpansion() {
-        expandedPipelineIds.clear()
-        for (i in 0 until rootNode.childCount) {
-            val child = rootNode.getChildAt(i) as DefaultMutableTreeNode
-            val row = child.userObject as? PipelineRow ?: continue
-            if (tree.isExpanded(TreePath(child.path))) expandedPipelineIds += row.pipeline.id
         }
     }
 

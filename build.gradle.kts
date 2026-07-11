@@ -53,13 +53,18 @@ intellijPlatform {
                 untilBuild = "252.*"
             }
         }
-        // Fail the build on *any* verifier signal — including INTERNAL_API_USAGES.
-        // The bridge to the official GitLab plugin types against the non-internal
-        // `PersistentGitLabAccountManager` + `AccountManagerBase` chain, and the
-        // status-bar de-duplication goes through `StatusBarWidgetsManager.updateWidget`
-        // instead of `StatusBar.removeWidget(String)`. If a future change reintroduces
-        // an internal touchpoint we want CI to block it instead of tolerating it.
-        failureLevel = FailureLevel.ALL.toList()
+        // Fail on real compatibility problems (missing classes, invalid plugin, broken
+        // structure) but NOT on API-status signals: DEPRECATED/EXPERIMENTAL/INTERNAL
+        // usages are permanently red here — the Kotlin compiler generates bridge
+        // overrides for ToolWindowFactory's default methods (getIcon/getAnchor/manage,
+        // flagged internal in 2025.2, experimental in 253+), so FailureLevel.ALL made
+        // EVERY tag build fail regardless of regressions (v0.0.17 incident). The
+        // remaining levels still block genuinely broken releases.
+        failureLevel = FailureLevel.ALL.toList() - listOf(
+            FailureLevel.DEPRECATED_API_USAGES,
+            FailureLevel.EXPERIMENTAL_API_USAGES,
+            FailureLevel.INTERNAL_API_USAGES,
+        )
     }
 }
 

@@ -159,6 +159,34 @@ class GitLabPipelineService(
     }
 
     /**
+     * Retry the failed/canceled jobs of a pipeline (same pipeline id, re-runs in place).
+     * Clears the notified sets so the re-run produces start/finish notifications again.
+     * Caller is on a background thread.
+     */
+    fun retryPipeline(pipelineId: Long): Boolean {
+        val client = cachedClient ?: return false
+        val pid = cachedProjectId ?: return false
+        val ok = client.retryPipeline(pid, pipelineId)
+        if (ok) {
+            notifiedStartedIds -= pipelineId
+            notifiedTerminalIds -= pipelineId
+        }
+        return ok
+    }
+
+    /**
+     * Create a NEW pipeline run on a ref (branch/tag). Used by "Relanzar pipeline" for pipelines
+     * with nothing to retry (all jobs green). The new pipeline gets its own id, so the delta
+     * notifications pick it up on the next refresh without touching the notified sets.
+     * Caller is on a background thread.
+     */
+    fun createPipeline(ref: String): Boolean {
+        val client = cachedClient ?: return false
+        val pid = cachedProjectId ?: return false
+        return client.createPipeline(pid, ref)
+    }
+
+    /**
      * Delete a Release (metadata) and, optionally, the underlying tag. Returns
      * Pair(releaseDeleted, tagDeleted). ponytail: doesn't reclaim generic-package binaries —
      * those live in the package registry, see GitLabApiClient.deleteRelease comment.

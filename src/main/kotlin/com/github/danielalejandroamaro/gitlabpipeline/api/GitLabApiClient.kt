@@ -266,6 +266,41 @@ class GitLabApiClient(
     }
 
     /**
+     * Retry a pipeline: GitLab re-runs its failed/canceled jobs in place (same pipeline id).
+     * Returns true on 2xx. The caller is expected to refresh the list afterwards.
+     */
+    fun retryPipeline(projectId: Long, pipelineId: Long): Boolean {
+        val url = "$serverUrl/api/v4/projects/$projectId/pipelines/$pipelineId/retry"
+        return runCatching {
+            HttpRequests.post(url, null)
+                .tuner { conn -> conn.setRequestProperty("PRIVATE-TOKEN", token) }
+                .connect { req ->
+                    val code = (req.connection as java.net.HttpURLConnection).responseCode
+                    code in 200..299
+                }
+        }.onFailure { logger.warn("retryPipeline($projectId,$pipelineId) failed: ${it.message}") }
+            .getOrDefault(false)
+    }
+
+    /**
+     * Create a NEW pipeline on a ref (branch or tag) — GitLab's "run again" for pipelines whose
+     * jobs all succeeded (retry only re-runs failed/canceled jobs). Returns true on 2xx.
+     */
+    fun createPipeline(projectId: Long, ref: String): Boolean {
+        val encoded = URLEncoder.encode(ref, Charsets.UTF_8)
+        val url = "$serverUrl/api/v4/projects/$projectId/pipeline?ref=$encoded"
+        return runCatching {
+            HttpRequests.post(url, null)
+                .tuner { conn -> conn.setRequestProperty("PRIVATE-TOKEN", token) }
+                .connect { req ->
+                    val code = (req.connection as java.net.HttpURLConnection).responseCode
+                    code in 200..299
+                }
+        }.onFailure { logger.warn("createPipeline($projectId,$ref) failed: ${it.message}") }
+            .getOrDefault(false)
+    }
+
+    /**
      * Delete a release by tag name. Returns true on 2xx.
      * ponytail: GitLab keeps the release's generic-package binaries in the package registry —
      * this only nukes the Release entity (metadata + links + auto evidence/source archives).

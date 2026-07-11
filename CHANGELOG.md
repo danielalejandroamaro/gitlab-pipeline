@@ -2,6 +2,14 @@
 
 # gitlab-pipeline Changelog
 
+## [0.0.18] - 2026-07-11
+
+Reintento y relanzado de pipelines desde el tool window + fix del colapso del tree al pulsar Refresh.
+
+- **Reintentar pipeline (failed/canceled)** (`api/GitLabApiClient.kt`, `services/GitLabPipelineService.kt`, `toolWindow/PipelineToolWindowFactory.kt`) — click-derecho sobre un pipeline failed/canceled añade "Reintentar pipeline #X" (`POST /api/v4/projects/:id/pipelines/:pid/retry`): GitLab re-lanza los jobs fallidos/cancelados en el MISMO pipeline id. El bridge limpia `notifiedStarted/TerminalIds` para que el re-run vuelva a notificar arranque y final. Sin diálogo de confirmación (no destructivo); balloon de resultado + refresh.
+- **Relanzar pipeline (nuevo run en la ref)** (`api/GitLabApiClient.kt`, `services/GitLabPipelineService.kt`, `toolWindow/PipelineToolWindowFactory.kt`) — "Relanzar pipeline (nuevo run en <ref>)" visible en cualquier pipeline con ref, incluidos los verdes donde `/retry` no hace nada: `POST /api/v4/projects/:id/pipeline?ref=<ref>` crea un pipeline nuevo sobre la misma rama/tag, con id propio (las notificaciones delta lo detectan solas en el siguiente refresh).
+- **Fix: el botón Refresh colapsaba el pipeline expandido** (`toolWindow/PipelineToolWindowFactory.kt`) — la preservación de expansión re-fotografiaba el árbol en cada rebuild (`snapshotExpansion`), y el Refresh encadena limpieza de caché + hasta 3 emisiones de estado + deep-refresh: el snapshot podía tomarse con el nodo en estado transitorio (LoadingRow / nodo desanclado) y vaciar la memoria de expansión. Ahora `expandedPipelineIds` lo mantiene un `TreeExpansionListener` (solo un collapse real del usuario quita un id — `treeModel.reload()` colapsa sin disparar `treeCollapsed`, así que no contamina), y el Refresh conserva el `jobsCache` de los pipelines expandidos (`retainAll`) para reemplazar sus jobs in situ sin pasar por LoadingRow. Segunda iteración (el primer intento seguía parpadeando abre/cierra en cada tick): `rebuildTree` ahora actualiza **in situ** cuando la lista de pipelines no cambió de forma (el caso común, un tick cada ~3s) — userObjects vía `nodeChanged` y children vía `swapChildren` solo si difieren — sin `reload()` ni re-expand, así expansión/selección/scroll sobreviven intactos; la reconstrucción completa queda solo para cuando la lista realmente cambia (pipeline nuevo/borrado/reordenado).
+
 ## [0.0.17] - 2026-07-09
 
 Release de robustez + gestión de releases: el auto-refresh deja de gritar en rojo por cada blip de red (la causa del spam de balloons "Could not resolve project" con conexión intermitente a `gitlab.networks.imdea.org`), el tab Releases gana **borrado de releases** (con o sin su tag), y los pipelines con éxito parcial (última stage OK tras una stage fallida) se pintan **ámbar** en vez de rojo.
@@ -256,7 +264,8 @@ Primera release publicable. El proyecto pasa de scaffold de [IntelliJ Platform P
 
 - **Sideload local** — zip empaquetable con `./gradlew buildPlugin` en `build/distributions/gitlab-pipeline-watcher-0.0.1.zip` (~84 KB). Probado contra IntelliJ IDEA 2026.1 Ultimate, PyCharm 2026.1 y WebStorm 2026.1 — el plugin carga sin restart (`Plugin com.github.danielalejandroamaro.gitlabpipeline loaded without restart in 16 ms` en `idea.log`).
 
-[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.17...HEAD
+[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.18...HEAD
+[0.0.18]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.17...0.0.18
 [0.0.17]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.16...0.0.17
 [0.0.16]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.15...0.0.16
 [0.0.15]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.14...0.0.15
