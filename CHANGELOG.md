@@ -2,6 +2,17 @@
 
 # gitlab-pipeline Changelog
 
+<!-- Sección permanente: el job "Release draft" (build.yml del template) corre
+     `getChangelog --unreleased` en cada push a main y peta si no existe.
+     Se deja vacía; las entradas reales van en headings versionados via /release. -->
+## [Unreleased]
+
+## [0.0.19] - 2026-07-13
+
+Release de CI: el job "Release draft" deja de fallar en cada push a main.
+
+- **Sección `## [Unreleased]` permanente en `CHANGELOG.md`** — el job "Release draft" (`.github/workflows/build.yml`, parte del IntelliJ Platform Plugin Template, que por convención de este repo NO se modifica) ejecuta `./gradlew getChangelog --unreleased` en cada push a main, y desde v0.0.17 moría con `org.jetbrains.changelog.exceptions.MissingVersionException: Version is missing: Unreleased`: el flujo de release local escribe headings versionados directos (`## [X.Y.Z]`) y nunca dejaba una sección `[Unreleased]`, que es el contrato que el template espera. Fix mínimo sin tocar workflows: sección `## [Unreleased]` vacía y **permanente** al tope del changelog, con comentario HTML explicando su función. Las versiones nuevas se insertan debajo de ella; la sección no se promueve, no se rellena y no se borra. Verificado en local: `getChangelog --unreleased` pasa de `BUILD FAILED` a exit 0 (contenido vacío → el draft se crea con notas vacías). El draft de GitHub vuelve a generarse solo en cada push a main.
+
 ## [0.0.18] - 2026-07-11
 
 Reintento y relanzado de pipelines desde el tool window + fix del colapso del tree al pulsar Refresh.
