@@ -89,6 +89,20 @@ data class Release(
     val assets: List<ReleaseAsset>,
 )
 
+/**
+ * Entry of the project's Package Registry (`/projects/:id/packages`). GitLab lists one row
+ * per published version, so (name, version) pairs repeat the name across versions.
+ */
+data class GitLabPackage(
+    val id: Long,
+    val name: String,
+    val version: String?,
+    /** GitLab package_type: npm, maven, generic, pypi, conan, nuget, helm… */
+    val packageType: String,
+    /** Absolute URL of the package page, built from `_links.web_path`. */
+    val webUrl: String?,
+)
+
 data class StageSummary(
     val name: String,
     val status: PipelineStatus,

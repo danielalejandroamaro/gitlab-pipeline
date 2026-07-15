@@ -4,8 +4,17 @@
 
 <!-- Sección permanente: el job "Release draft" (build.yml del template) corre
      `getChangelog --unreleased` en cada push a main y peta si no existe.
-     Se deja vacía; las entradas reales van en headings versionados via /release. -->
+     Las notas del release en curso se escriben AQUÍ (via /release); el PR automático
+     del template las promueve a `## [X.Y.Z]` al publicar el draft de GitHub. -->
 ## [Unreleased]
+
+Nuevo tab "Packages" en el tool window: el Package Registry del proyecto visible desde el IDE, con copia de `pnpm install <paquete>` al portapapeles, borrado de packages y notificación de packages nuevos en el auto-refresh.
+
+- **Tab "Packages" en el tool window** (`toolWindow/PackagesTabPanel.kt` nuevo, `toolWindow/PipelineToolWindowFactory.kt`) — cuarto content entre "Releases" y "Logs". Lista plana con una fila por versión publicada (`nombre versión · tipo`, icono PpJar), espejo del listado del propio GitLab. Mismo chasis que el tab Releases: label de estado ("N packages" / "Cargando packages…" / "(sin packages)"), botón Refresh compartido con el servicio, y suscripción al `StateFlow` — sin polling propio. Doble click sobre una fila abre la página del package en el navegador (URL absoluta construida desde `_links.web_path`).
+- **Copiar `pnpm install` desde el menú contextual** — click-derecho sobre un package **npm** ofrece "Copiar: `pnpm install <nombre>`" y, si la fila tiene versión, "Copiar: `pnpm install <nombre>@<versión>`" (instala la versión exacta de esa fila; el item sin versión instala latest). Copia al portapapeles vía `CopyPasteManager` + balloon de confirmación. Solo aparece en packages tipo npm — en maven/generic/pypi el comando no aplica. Completa el menú "Abrir en navegador" para cualquier tipo.
+- **Borrar package desde el menú contextual** (`api/GitLabApiClient.kt`, `services/GitLabPipelineService.kt`) — "Borrar package <nombre versión>" (icono GC, tras separador) con diálogo de confirmación que avisa que se borran todos los archivos y no hay deshacer → `DELETE /api/v4/projects/:id/packages/:package_id` en background (mismo patrón HttpRequests+DELETE que `deleteRelease`) → balloon con el resultado → refresh para que la fila desaparezca. Es el purge de binarios que el borrado de releases (v0.0.17) dejó documentado como pendiente. El bridge saca el id de `notifiedPackageIds`, así que republicar la misma versión vuelve a notificar.
+- **`GitLabApiClient.listPackages` + modelo `GitLabPackage`** (`api/GitLabApiClient.kt`, `model/Pipeline.kt`) — `GET /api/v4/projects/:id/packages?per_page=50&order_by=created_at&sort=desc`, mismo contrato de resiliencia que `listReleases`: `null` en fallo transitorio y `refreshNow()` conserva el snapshot previo para no blanquear el tab en un blip de red. `GitLabPackage(id, name, version, packageType, webUrl)`.
+- **Notificación "Nuevo package detectado"** (`services/GitLabPipelineService.kt`) — `emitPackageDeltaNotifications` en el mismo tick del auto-refresh, dedupe por id de package en `notifiedPackageIds`, entrada en el event log con el tipo. Primera carga no vacía se adopta como baseline en silencio (sin spamear el histórico al abrir el proyecto), igual que pipelines y releases.
 
 ## [0.0.19] - 2026-07-13
 

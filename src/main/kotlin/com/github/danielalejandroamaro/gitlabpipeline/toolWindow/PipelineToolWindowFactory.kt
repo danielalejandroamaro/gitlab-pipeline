@@ -68,10 +68,12 @@ class PipelineToolWindowFactory : ToolWindowFactory {
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val pipelinesPanel = PipelinePanel(project)
         val releasesPanel = ReleasesTabPanel(project)
+        val packagesPanel = PackagesTabPanel(project)
         val eventLogPanel = EventLogTabPanel(project)
         val cf = ContentFactory.getInstance()
         toolWindow.contentManager.addContent(cf.createContent(pipelinesPanel.root, "Pipelines", false))
         toolWindow.contentManager.addContent(cf.createContent(releasesPanel.root, "Releases", false))
+        toolWindow.contentManager.addContent(cf.createContent(packagesPanel.root, "Packages", false))
         toolWindow.contentManager.addContent(cf.createContent(eventLogPanel.root, "Logs", false))
     }
 }

@@ -235,6 +235,29 @@ class GitLabApiClient(
             .getOrNull()
     }
 
+    /**
+     * Package Registry entries (newest first). One row per published version. Returns null on
+     * transient failure, same contract as [listReleases].
+     */
+    fun listPackages(projectId: Long, perPage: Int = 50): List<com.github.danielalejandroamaro.gitlabpipeline.model.GitLabPackage>? {
+        val url = "$serverUrl/api/v4/projects/$projectId/packages?per_page=$perPage&order_by=created_at&sort=desc"
+        return runCatching {
+            val body = get(url)
+            JsonParser.parseString(body).asJsonArray.map { it.asJsonObject }.map { obj ->
+                val webPath = obj["_links"]?.takeIf { !it.isJsonNull }?.asJsonObject
+                    ?.get("web_path")?.takeIf { !it.isJsonNull }?.asString
+                com.github.danielalejandroamaro.gitlabpipeline.model.GitLabPackage(
+                    id = obj["id"].asLong,
+                    name = obj["name"]?.takeIf { !it.isJsonNull }?.asString ?: "(unnamed)",
+                    version = obj["version"]?.takeIf { !it.isJsonNull }?.asString,
+                    packageType = obj["package_type"]?.takeIf { !it.isJsonNull }?.asString ?: "generic",
+                    webUrl = webPath?.let { path -> "$serverUrl$path" },
+                )
+            }
+        }.onFailure { logger.warn("listPackages($projectId) failed: ${it.message}") }
+            .getOrNull()
+    }
+
     /** Stream an arbitrary URL (assumed same-host) to disk using the configured token. */
     fun downloadUrl(url: String, dest: File): Boolean =
         runCatching {
@@ -321,6 +344,26 @@ class GitLabApiClient(
                     code in 200..299
                 }
         }.onFailure { logger.warn("deleteRelease($projectId,$tagName) failed: ${it.message}") }
+            .getOrDefault(false)
+    }
+
+    /**
+     * Delete a package (with all its files) from the Package Registry. Returns true on 2xx.
+     * This is the storage-reclaiming counterpart of [deleteRelease].
+     */
+    fun deletePackage(projectId: Long, packageId: Long): Boolean {
+        val url = "$serverUrl/api/v4/projects/$projectId/packages/$packageId"
+        return runCatching {
+            HttpRequests.request(url)
+                .tuner { conn ->
+                    conn.setRequestProperty("PRIVATE-TOKEN", token)
+                    (conn as java.net.HttpURLConnection).requestMethod = "DELETE"
+                }
+                .connect { req ->
+                    val code = (req.connection as java.net.HttpURLConnection).responseCode
+                    code in 200..299
+                }
+        }.onFailure { logger.warn("deletePackage($projectId,$packageId) failed: ${it.message}") }
             .getOrDefault(false)
     }
 

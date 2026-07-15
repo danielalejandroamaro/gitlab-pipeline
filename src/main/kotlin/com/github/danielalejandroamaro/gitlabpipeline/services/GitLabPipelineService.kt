@@ -3,6 +3,7 @@ package com.github.danielalejandroamaro.gitlabpipeline.services
 import com.github.danielalejandroamaro.gitlabpipeline.MyBundle
 import com.github.danielalejandroamaro.gitlabpipeline.api.GitLabApiClient
 import com.github.danielalejandroamaro.gitlabpipeline.auth.GitLabAuthBridge
+import com.github.danielalejandroamaro.gitlabpipeline.model.GitLabPackage
 import com.github.danielalejandroamaro.gitlabpipeline.model.Pipeline
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
 import com.github.danielalejandroamaro.gitlabpipeline.model.Release
@@ -55,6 +56,8 @@ class GitLabPipelineService(
         val lastRefreshedAt: Long = 0L,
         /** Releases of the project, newest first. Refreshed in the same tick as pipelines. */
         val releases: List<Release> = emptyList(),
+        /** Package Registry entries, newest first. Refreshed in the same tick as pipelines. */
+        val packages: List<GitLabPackage> = emptyList(),
     )
 
     private val _state = MutableStateFlow(State(ciEnabled = GitLabCiDetector.hasCiFile(project)))
@@ -99,6 +102,8 @@ class GitLabPipelineService(
     private val notifiedTerminalIds = mutableSetOf<Long>()
     /** Release tag names we've already balloon'd. Same dedupe idea as pipelines. */
     private val notifiedReleaseTags = mutableSetOf<String>()
+    /** Package ids we've already balloon'd (one id per published version). Same dedupe idea. */
+    private val notifiedPackageIds = mutableSetOf<Long>()
     /** False until the first successful list fetch lands. Suppresses notifications for the historic backlog at project open. */
     @Volatile private var firstFetchSeeded = false
 
@@ -304,14 +309,18 @@ class GitLabPipelineService(
         // Pull releases in the same tick — one extra GET per refresh. Failures are non-fatal:
         // we keep the previous list so a transient blip doesn't blank the Releases tab.
         val releases = client.listReleases(projectId) ?: _state.value.releases
+        // Same non-fatal contract for packages: keep the previous list on a blip.
+        val packages = client.listPackages(projectId) ?: _state.value.packages
         _state.value = _state.value.copy(
             errorMessage = null,
             pipelines = pipelines,
             releases = releases,
+            packages = packages,
             lastRefreshedAt = System.currentTimeMillis(),
         )
         emitListDeltaNotifications(pipelines, previousById)
         emitReleaseDeltaNotifications(releases)
+        emitPackageDeltaNotifications(packages)
         return client to projectId
     }
 
@@ -338,6 +347,37 @@ class GitLabPipelineService(
                 eventLog.info("Release ${r.tagName} detected (${r.assets.size} assets)")
             }
         }
+    }
+
+    /**
+     * Balloon when a new package version lands in the registry. Same baseline-adoption trick as
+     * releases: the first time we see a non-empty list we seed silently instead of spamming the
+     * historic backlog.
+     */
+    private fun emitPackageDeltaNotifications(packages: List<GitLabPackage>) {
+        if (notifiedPackageIds.isEmpty()) {
+            packages.forEach { notifiedPackageIds += it.id }
+            return
+        }
+        for (p in packages) {
+            if (notifiedPackageIds.add(p.id)) {
+                val label = "${p.name} ${p.version ?: ""}".trim()
+                notify("Nuevo package detectado: $label", NotificationType.INFORMATION)
+                eventLog.info("Package $label detected (${p.packageType})")
+            }
+        }
+    }
+
+    /**
+     * Delete a package from the Package Registry. Returns true on success. Caller is on a
+     * background thread and is expected to refresh afterwards.
+     */
+    fun deletePackage(packageId: Long): Boolean {
+        val client = cachedClient ?: return false
+        val pid = cachedProjectId ?: return false
+        val ok = client.deletePackage(pid, packageId)
+        if (ok) notifiedPackageIds -= packageId
+        return ok
     }
 
     /**
