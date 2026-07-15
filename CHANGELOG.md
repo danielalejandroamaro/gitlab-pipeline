@@ -5,6 +5,7 @@
 <!-- Sección permanente: el job "Release draft" (build.yml del template) corre
      `getChangelog --unreleased` en cada push a main y peta si no existe.
      Se deja vacía; las entradas reales van en headings versionados via /release. -->
+
 ## [Unreleased]
 
 ## [0.0.19] - 2026-07-13
@@ -275,7 +276,8 @@ Primera release publicable. El proyecto pasa de scaffold de [IntelliJ Platform P
 
 - **Sideload local** — zip empaquetable con `./gradlew buildPlugin` en `build/distributions/gitlab-pipeline-watcher-0.0.1.zip` (~84 KB). Probado contra IntelliJ IDEA 2026.1 Ultimate, PyCharm 2026.1 y WebStorm 2026.1 — el plugin carga sin restart (`Plugin com.github.danielalejandroamaro.gitlabpipeline loaded without restart in 16 ms` en `idea.log`).
 
-[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.18...HEAD
+[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.19...HEAD
+[0.0.19]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.18...0.0.19
 [0.0.18]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.17...0.0.18
 [0.0.17]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.16...0.0.17
 [0.0.16]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.15...0.0.16
