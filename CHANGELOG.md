@@ -6,7 +6,10 @@
      `getChangelog --unreleased` en cada push a main y peta si no existe.
      Las notas del release en curso se escriben AQUÍ (via /release); el PR automático
      del template las promueve a `## [X.Y.Z]` al publicar el draft de GitHub. -->
+
 ## [Unreleased]
+
+## [0.0.20] - 2026-07-16
 
 Nuevo tab "Packages" en el tool window: el Package Registry del proyecto visible desde el IDE, con copia de `pnpm install <paquete>` al portapapeles, borrado de packages y notificación de packages nuevos en el auto-refresh.
 
@@ -284,7 +287,9 @@ Primera release publicable. El proyecto pasa de scaffold de [IntelliJ Platform P
 
 - **Sideload local** — zip empaquetable con `./gradlew buildPlugin` en `build/distributions/gitlab-pipeline-watcher-0.0.1.zip` (~84 KB). Probado contra IntelliJ IDEA 2026.1 Ultimate, PyCharm 2026.1 y WebStorm 2026.1 — el plugin carga sin restart (`Plugin com.github.danielalejandroamaro.gitlabpipeline loaded without restart in 16 ms` en `idea.log`).
 
-[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.18...HEAD
+[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.20...HEAD
+[0.0.20]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.19...0.0.20
+[0.0.19]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.18...0.0.19
 [0.0.18]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.17...0.0.18
 [0.0.17]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.16...0.0.17
 [0.0.16]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.15...0.0.16
