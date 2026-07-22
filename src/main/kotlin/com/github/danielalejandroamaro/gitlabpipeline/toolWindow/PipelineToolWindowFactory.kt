@@ -7,6 +7,7 @@ import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
 import com.github.danielalejandroamaro.gitlabpipeline.model.StageSummary
 import com.github.danielalejandroamaro.gitlabpipeline.services.GitLabCiDetector
 import com.github.danielalejandroamaro.gitlabpipeline.services.GitLabPipelineService
+import com.github.danielalejandroamaro.gitlabpipeline.services.PipelineEventLog
 import com.github.danielalejandroamaro.gitlabpipeline.ui.ColoredDotIcon
 import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
@@ -81,6 +82,7 @@ class PipelineToolWindowFactory : ToolWindowFactory {
 private class PipelinePanel(private val project: Project) {
 
     private val service = project.service<GitLabPipelineService>()
+    private val eventLog = project.service<PipelineEventLog>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var subscription: Job? = null
     private var jobsRefreshLoop: Job? = null
@@ -164,10 +166,16 @@ private class PipelinePanel(private val project: Project) {
         // only a real user collapse removes an id — rebuilds always re-expand what the user had.
         addTreeExpansionListener(object : javax.swing.event.TreeExpansionListener {
             override fun treeExpanded(event: TreeExpansionEvent) {
-                pipelineIdAt(event)?.let { expandedPipelineIds += it }
+                pipelineIdAt(event)?.let {
+                    expandedPipelineIds += it
+                    eventLog.info("tree: EXPAND event pid=$it")
+                }
             }
             override fun treeCollapsed(event: TreeExpansionEvent) {
-                pipelineIdAt(event)?.let { expandedPipelineIds -= it }
+                pipelineIdAt(event)?.let {
+                    expandedPipelineIds -= it
+                    eventLog.info("tree: COLLAPSE event pid=$it")
+                }
             }
             private fun pipelineIdAt(event: TreeExpansionEvent): Long? {
                 val node = event.path.lastPathComponent as? DefaultMutableTreeNode ?: return null
@@ -399,6 +407,11 @@ private class PipelinePanel(private val project: Project) {
                     })
                 }
                 val tagLabel = p.ref?.takeIf { p.tag && it.isNotBlank() }
+                if (tagLabel != null) {
+                    menu.add(JMenuItem("Borrar tag $tagLabel (solo el tag)", AllIcons.Actions.GC).apply {
+                        addActionListener { confirmAndDeleteTag(tagLabel) }
+                    })
+                }
                 val deleteLabel = if (tagLabel != null) "Borrar pipeline #${p.id} + tag $tagLabel"
                                   else "Borrar pipeline #${p.id}"
                 menu.add(JMenuItem(deleteLabel, AllIcons.Actions.GC).apply {
@@ -474,6 +487,33 @@ private class PipelinePanel(private val project: Project) {
                     .createNotification(msg, type)
                     .notify(project)
                 if (ok) service.refresh()
+            }
+        }
+    }
+
+    /** Confirm, then delete ONLY the tag (the pipeline row stays) on a background thread. */
+    private fun confirmAndDeleteTag(tagName: String) {
+        val ok = com.intellij.openapi.ui.Messages.showYesNoDialog(
+            project,
+            "Vas a borrar el tag $tagName en GitLab (el pipeline se conserva).\n" +
+                "La acción no se puede deshacer.\n\n" +
+                "¿Continuar?",
+            "Borrar tag",
+            com.intellij.openapi.ui.Messages.getWarningIcon(),
+        )
+        if (ok != com.intellij.openapi.ui.Messages.YES) return
+        scope.launch(Dispatchers.IO) {
+            val deleted = service.deleteTag(tagName)
+            ApplicationManager.getApplication().invokeLater {
+                val (msg, type) = if (deleted) {
+                    "tag $tagName borrado" to com.intellij.notification.NotificationType.INFORMATION
+                } else {
+                    "no se pudo borrar tag $tagName" to com.intellij.notification.NotificationType.ERROR
+                }
+                com.intellij.notification.NotificationGroupManager.getInstance()
+                    .getNotificationGroup("GitLab Pipeline Watcher")
+                    .createNotification(msg, type)
+                    .notify(project)
             }
         }
     }
@@ -593,6 +633,7 @@ private class PipelinePanel(private val project: Project) {
     private fun rebuildTree(pipelines: List<Pipeline>) {
         val staleIds = computeStaleTagIds(pipelines)
         val newIds = pipelines.mapTo(mutableSetOf()) { it.id }
+        var removed = 0; var updated = 0; var inserted = 0
         // 1. Drop rows whose pipeline vanished from the list.
         var i = 0
         while (i < rootNode.childCount) {
@@ -601,6 +642,8 @@ private class PipelinePanel(private val project: Project) {
             if (id == null || id !in newIds) {
                 rootNode.remove(i)
                 treeModel.nodesWereRemoved(rootNode, intArrayOf(i), arrayOf(node))
+                removed++
+                eventLog.info("tree: removed pid=$id at idx=$i")
             } else i++
         }
         // 2. Walk the new list: id matches the node at that index → update in place;
@@ -615,8 +658,15 @@ private class PipelinePanel(private val project: Project) {
             val existing = if (idx < rootNode.childCount) rootNode.getChildAt(idx) as DefaultMutableTreeNode else null
             if (existing != null && (existing.userObject as? PipelineRow)?.pipeline?.id == p.id) {
                 if (existing.userObject != newRow) {
+                    val old = existing.userObject as? PipelineRow
                     existing.userObject = newRow
                     treeModel.nodeChanged(existing)
+                    updated++
+                    eventLog.info(
+                        "tree: nodeChanged pid=${p.id} " +
+                            "status=${old?.pipeline?.status}→${p.status} " +
+                            "amber=${old?.mixedAmber}→${newRow.mixedAmber} stale=${old?.staleTag}→${newRow.staleTag}"
+                    )
                 }
                 if (cachedJobs != null) {
                     val rows: List<Any> = if (cachedJobs.isEmpty()) listOf(EmptyRow) else cachedJobs.map { JobRow(it) }
@@ -628,6 +678,12 @@ private class PipelinePanel(private val project: Project) {
                 else node.add(DefaultMutableTreeNode(LoadingRow))
                 rootNode.insert(node, idx)
                 treeModel.nodesWereInserted(rootNode, intArrayOf(idx))
+                inserted++
+                eventLog.info(
+                    "tree: inserted pid=${p.id} at idx=$idx " +
+                        "(existingAtIdx=${(existing?.userObject as? PipelineRow)?.pipeline?.id ?: "none"}, " +
+                        "reExpand=${p.id in expandedPipelineIds})"
+                )
                 if (p.id in expandedPipelineIds) tree.expandPath(TreePath(node.path))
             }
         }
@@ -640,6 +696,11 @@ private class PipelinePanel(private val project: Project) {
             val node = rootNode.getChildAt(last) as DefaultMutableTreeNode
             rootNode.remove(last)
             treeModel.nodesWereRemoved(rootNode, intArrayOf(last), arrayOf(node))
+            removed++
+            eventLog.info("tree: trimmed trailing pid=${((node.userObject) as? PipelineRow)?.pipeline?.id} at idx=$last")
+        }
+        if (removed + updated + inserted > 0) {
+            eventLog.info("tree: render mutated — removed=$removed updated=$updated inserted=$inserted (n=${pipelines.size})")
         }
         // The INVISIBLE root starts collapsed (and re-collapses if it ever hits 0 children);
         // fine-grained inserts don't auto-expand it — only reload()/structure events did — so
@@ -671,6 +732,30 @@ private class PipelinePanel(private val project: Project) {
         val current = (0 until parent.childCount)
             .map { (parent.getChildAt(it) as DefaultMutableTreeNode).userObject }
         if (current == newRows) return
+        val pid = (parent.userObject as? PipelineRow)?.pipeline?.id
+        // Same row count → update userObject in place + nodeChanged per differing row. That
+        // repaints ONLY those rows: no remove/insert events, no relayout, no flash. This is the
+        // common path — jobs mutate (duration ticks up, status flips) far more often than they
+        // appear/disappear.
+        if (current.size == newRows.size) {
+            var changed = 0
+            for (idx in newRows.indices) {
+                if (current[idx] != newRows[idx]) {
+                    val child = parent.getChildAt(idx) as DefaultMutableTreeNode
+                    child.userObject = newRows[idx]
+                    treeModel.nodeChanged(child)
+                    changed++
+                }
+            }
+            eventLog.info("tree: in-place update pid=$pid $changed/${newRows.size} rows")
+            return
+        }
+        // Row count changed (job added/removed) → structural remove+insert. Rare, so the
+        // one-frame relayout here is acceptable.
+        eventLog.info(
+            "tree: STRUCTURAL swap pid=$pid ${current.size}→${newRows.size} rows " +
+                "old0=[${rowBrief(current.firstOrNull())}] new0=[${rowBrief(newRows.firstOrNull())}]"
+        )
         val oldCount = parent.childCount
         if (oldCount > 0) {
             val removed = Array<Any>(oldCount) { parent.getChildAt(it) }
@@ -681,6 +766,16 @@ private class PipelinePanel(private val project: Project) {
         if (newRows.isEmpty()) return
         for (row in newRows) parent.add(DefaultMutableTreeNode(row))
         treeModel.nodesWereInserted(parent, IntArray(newRows.size) { it })
+    }
+
+    /** One-line summary of a tree row for the diagnostic log. */
+    private fun rowBrief(row: Any?): String = when (row) {
+        null -> "∅"
+        is PipelineRow -> "P#${row.pipeline.id} ${row.pipeline.status}"
+        is JobRow -> "J#${row.job.id} ${row.job.name} ${row.job.status} d=${row.job.duration} art=${row.job.hasArtifacts}"
+        LoadingRow -> "Loading"
+        EmptyRow -> "Empty"
+        else -> row.toString()
     }
 
     private fun maybeLoadJobs(pipelineNode: DefaultMutableTreeNode, pipelineId: Long) {

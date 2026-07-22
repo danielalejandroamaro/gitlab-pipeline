@@ -45,6 +45,14 @@ class GitLabApiClient(
      */
     fun listPipelines(projectId: Long, perPage: Int = 20): List<Pipeline>? {
         val url = "$serverUrl/api/v4/projects/$projectId/pipelines?per_page=$perPage&order_by=id&sort=desc"
+        // The list endpoint omits the `tag` boolean (only GET /pipelines/:id has it), so a
+        // second call with scope=tags marks which ids are tag pipelines. Same window size and
+        // sort, so every tag pipeline of the main list is covered. Failure degrades to "no
+        // tags detected" instead of failing the whole list.
+        val tagIds: Set<Long> = runCatching {
+            val body = get("$serverUrl/api/v4/projects/$projectId/pipelines?scope=tags&per_page=$perPage&order_by=id&sort=desc")
+            JsonParser.parseString(body).asJsonArray.map { it.asJsonObject["id"].asLong }.toSet()
+        }.getOrDefault(emptySet())
         return runCatching {
             val body = get(url)
             JsonParser.parseString(body).asJsonArray.map { it.asJsonObject }.map { obj ->
@@ -55,7 +63,7 @@ class GitLabApiClient(
                     status = PipelineStatus.fromRaw(obj["status"]?.takeIf { !it.isJsonNull }?.asString),
                     ref = obj["ref"]?.takeIf { !it.isJsonNull }?.asString,
                     sha = obj["sha"]?.takeIf { !it.isJsonNull }?.asString,
-                    tag = obj["tag"]?.takeIf { !it.isJsonNull }?.asBoolean ?: false,
+                    tag = obj["tag"]?.takeIf { !it.isJsonNull }?.asBoolean ?: (obj["id"].asLong in tagIds),
                     webUrl = obj["web_url"]?.takeIf { !it.isJsonNull }?.asString,
                     createdAt = obj["created_at"]?.takeIf { !it.isJsonNull }?.asString,
                     updatedAt = obj["updated_at"]?.takeIf { !it.isJsonNull }?.asString,

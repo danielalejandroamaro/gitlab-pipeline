@@ -163,6 +163,13 @@ class GitLabPipelineService(
         return pipelineOk to tagOk
     }
 
+    /** Delete just a tag (the pipeline stays). Caller is on a background thread. */
+    fun deleteTag(tagName: String): Boolean {
+        val client = cachedClient ?: return false
+        val pid = cachedProjectId ?: return false
+        return client.deleteTag(pid, tagName)
+    }
+
     /**
      * Retry the failed/canceled jobs of a pipeline (same pipeline id, re-runs in place).
      * Clears the notified sets so the re-run produces start/finish notifications again.
