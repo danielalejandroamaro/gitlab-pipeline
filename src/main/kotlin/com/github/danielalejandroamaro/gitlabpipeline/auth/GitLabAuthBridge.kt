@@ -29,8 +29,10 @@ import org.jetbrains.plugins.gitlab.authentication.accounts.GitLabAccount
  * Fix here: look up the manager via `Class.forName(...)` so the bytecode of this file never
  * mentions `GitLabAccountManager` directly. The verifier scans references, not strings, so the
  * INTERNAL_API_USAGES count stays at zero. Method dispatch on the returned object goes through
- * `AccountManagerBase<GitLabAccount, String>` (public, in `com.intellij.collaboration.auth`),
+ * `AccountManagerBase<GitLabAccount, Any>` (public, in `com.intellij.collaboration.auth`),
  * so `accountsState.value` and `findCredentials(account)` both type-check against public API.
+ * The credentials type is `Any` because 2026.2 changed it from `String` to the internal
+ * `GitLabCredentials` sealed class — `tokenFor` handles both shapes at runtime.
  *
  * Trade-off: if a future JetBrains GitLab plugin renames or moves
  * `GitLabAccountManager`, this bridge breaks at runtime with no compile-time warning. The
@@ -65,7 +67,7 @@ object GitLabAuthBridge {
     )
 
     @Suppress("UNCHECKED_CAST")
-    private val accountManager: AccountManagerBase<GitLabAccount, String>?
+    private val accountManager: AccountManagerBase<GitLabAccount, Any>?
         get() = runCatching {
             val cls = Class.forName(MANAGER_FQN)
             val svc = ApplicationManager.getApplication().getService(cls)
@@ -76,7 +78,7 @@ object GitLabAuthBridge {
             }
             lastResolvedManagerClass = svc.javaClass.name
             lastResolutionError = null
-            svc as AccountManagerBase<GitLabAccount, String>
+            svc as AccountManagerBase<GitLabAccount, Any>
         }.onFailure {
             lastResolvedManagerClass = null
             lastResolutionError = "${it::class.simpleName}: ${it.message}"
@@ -97,7 +99,13 @@ object GitLabAuthBridge {
     fun tokenFor(account: ResolvedAccount): String? {
         val manager = accountManager ?: return null
         return runCatching {
-            runBlocking { manager.findCredentials(account.rawAccount) }
+            when (val cred = runBlocking { manager.findCredentials(account.rawAccount) }) {
+                null -> null
+                is String -> cred // <=2026.1: credentials are the raw token
+                // 2026.2+: GitLabCredentials sealed class; read accessToken reflectively to keep
+                // this file free of compile-time references to the internal type.
+                else -> cred.javaClass.getMethod("getAccessToken").invoke(cred) as? String
+            }
         }.onFailure { logger.warn("findCredentials failed: ${it.message}") }
             .getOrNull()
     }

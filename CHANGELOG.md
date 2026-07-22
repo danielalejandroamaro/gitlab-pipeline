@@ -8,6 +8,12 @@
      del template las promueve a `## [X.Y.Z]` al publicar el draft de GitHub. -->
 ## [Unreleased]
 
+<!-- v0.0.22 (pendiente de promoción) -->
+
+Compatibilidad con los IDEs 2026.2: la v0.0.21 (y anteriores) **no funciona en 2026.2** — la cuenta GitLab se resuelve pero el token no ("GitLab account X has no token stored"), así que el watcher queda muerto. Esta versión lo arregla y **saca de circulación a la 0.0.21**: en 2026.2 hay que instalar 0.0.22, y en 2026.1 y anteriores 0.0.22 funciona igual que la 0.0.21 (fix retrocompatible).
+
+- **Fix: token ilegible con el plugin GitLab de 2026.2** (`auth/GitLabAuthBridge.kt`) — en la rama 262 de intellij-community el `GitLabAccountManager` cambió su tipo de credenciales de `String` a la sealed class interna `GitLabCredentials` (JSON en PasswordSafe, con `accessToken` dentro). El bridge casteaba el manager a `AccountManagerBase<GitLabAccount, String>`, y el checkcast a `String` que el compilador insertaba sobre el resultado de `findCredentials` reventaba con `ClassCastException` — tragada por el `runCatching` → token `null` → "has no token stored" en cada refresh, con la cuenta perfectamente visible (registro del servicio y `accountsState` no cambiaron). Ahora el cast es `AccountManagerBase<GitLabAccount, Any>` y `tokenFor` acepta ambas formas: `String` directo (≤2026.1) o `getAccessToken()` por reflexión (2026.2+, sin referencia compile-time al tipo interno — el Plugin Verifier sigue en cero INTERNAL_API_USAGES).
+
 <!-- v0.0.21 (pendiente de promoción; las notas de 0.0.20 de abajo las promueve el PR #14) -->
 
 Refresh del árbol de pipelines sin flash ni colapso: la reconstrucción pasa de `reload()` global a un diff incremental por id, y el plugin de Gradle `org.jetbrains.intellij.platform` sube a 2.18.1.
