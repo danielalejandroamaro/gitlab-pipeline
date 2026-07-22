@@ -582,64 +582,69 @@ private class PipelinePanel(private val project: Project) {
         }.toSet()
     }
 
+    /**
+     * Incremental, id-keyed diff against the current tree — NEVER calls [DefaultTreeModel.reload].
+     * `reload()` collapses every node without firing collapse events and the follow-up
+     * `expandPath` re-opens them — that open/close cycle was the visible flash+collapse the
+     * user saw on every refresh that changed the list. Here surviving rows are updated in
+     * place (no structure event → expansion/selection/scroll untouched) and only genuinely
+     * new/removed rows fire fine-grained insert/remove events.
+     */
     private fun rebuildTree(pipelines: List<Pipeline>) {
         val staleIds = computeStaleTagIds(pipelines)
-        // In-place update when the pipeline list didn't change shape (the common case: the state
-        // flow ticks every few seconds with the same list). `reload()` collapses everything and
-        // the follow-up expandPath re-opens it — a visible open/close flicker on every tick.
-        // Updating userObjects + children in place fires no structure event, so expansion,
-        // selection and scroll survive untouched.
-        val sameShape = rootNode.childCount == pipelines.size && pipelines.withIndex().all { (i, p) ->
-            ((rootNode.getChildAt(i) as DefaultMutableTreeNode).userObject as? PipelineRow)?.pipeline?.id == p.id
+        val newIds = pipelines.mapTo(mutableSetOf()) { it.id }
+        // 1. Drop rows whose pipeline vanished from the list.
+        var i = 0
+        while (i < rootNode.childCount) {
+            val node = rootNode.getChildAt(i) as DefaultMutableTreeNode
+            val id = (node.userObject as? PipelineRow)?.pipeline?.id
+            if (id == null || id !in newIds) {
+                rootNode.remove(i)
+                treeModel.nodesWereRemoved(rootNode, intArrayOf(i), arrayOf(node))
+            } else i++
         }
-        if (sameShape) {
-            for ((i, p) in pipelines.withIndex()) {
-                val node = rootNode.getChildAt(i) as DefaultMutableTreeNode
-                val cachedJobs = jobsCache[p.id]
-                val newRow = PipelineRow(
-                    p,
-                    staleTag = p.id in staleIds,
-                    mixedAmber = cachedJobs?.let { computeMixedAmber(it) } ?: false,
-                )
-                if (node.userObject != newRow) {
-                    node.userObject = newRow
-                    treeModel.nodeChanged(node)
-                }
-                // Refresh children only if the cached jobs actually differ from what's shown —
-                // swapChildren preserves expansion, but not selection inside the subtree.
-                if (cachedJobs != null) {
-                    val newRows: List<Any> = if (cachedJobs.isEmpty()) listOf(EmptyRow)
-                                             else cachedJobs.map { JobRow(it) }
-                    val current = (0 until node.childCount)
-                        .map { (node.getChildAt(it) as DefaultMutableTreeNode).userObject }
-                    if (current != newRows) swapChildren(node, newRows)
-                }
-            }
-            return
-        }
-        // List changed (new/removed/reordered pipelines) — full rebuild + re-expand.
-        rootNode.removeAllChildren()
-        for (p in pipelines) {
+        // 2. Walk the new list: id matches the node at that index → update in place;
+        //    otherwise insert a fresh node there.
+        for ((idx, p) in pipelines.withIndex()) {
             val cachedJobs = jobsCache[p.id]
-            val mixed = cachedJobs?.let { computeMixedAmber(it) } ?: false
-            val pipelineNode = DefaultMutableTreeNode(
-                PipelineRow(p, staleTag = p.id in staleIds, mixedAmber = mixed),
+            val newRow = PipelineRow(
+                p,
+                staleTag = p.id in staleIds,
+                mixedAmber = cachedJobs?.let { computeMixedAmber(it) } ?: false,
             )
-            if (cachedJobs != null) {
-                attachJobs(pipelineNode, cachedJobs)
+            val existing = if (idx < rootNode.childCount) rootNode.getChildAt(idx) as DefaultMutableTreeNode else null
+            if (existing != null && (existing.userObject as? PipelineRow)?.pipeline?.id == p.id) {
+                if (existing.userObject != newRow) {
+                    existing.userObject = newRow
+                    treeModel.nodeChanged(existing)
+                }
+                if (cachedJobs != null) {
+                    val rows: List<Any> = if (cachedJobs.isEmpty()) listOf(EmptyRow) else cachedJobs.map { JobRow(it) }
+                    swapChildren(existing, rows)
+                }
             } else {
-                pipelineNode.add(DefaultMutableTreeNode(LoadingRow))
-            }
-            rootNode.add(pipelineNode)
-        }
-        treeModel.reload()
-        for (i in 0 until rootNode.childCount) {
-            val child = rootNode.getChildAt(i) as DefaultMutableTreeNode
-            val row = child.userObject as? PipelineRow ?: continue
-            if (expandedPipelineIds.contains(row.pipeline.id)) {
-                tree.expandPath(TreePath(child.path))
+                val node = DefaultMutableTreeNode(newRow)
+                if (cachedJobs != null) attachJobs(node, cachedJobs)
+                else node.add(DefaultMutableTreeNode(LoadingRow))
+                rootNode.insert(node, idx)
+                treeModel.nodesWereInserted(rootNode, intArrayOf(idx))
+                if (p.id in expandedPipelineIds) tree.expandPath(TreePath(node.path))
             }
         }
+        // 3. Trim leftovers past the end. ponytail: a REORDERED surviving row re-enters as a
+        // fresh insert in step 2 and its old instance falls out here — jobsCache +
+        // expandedPipelineIds rebuild it identically, and ids never reorder in practice
+        // (list is sorted by id desc), so no fancier LCS diff.
+        while (rootNode.childCount > pipelines.size) {
+            val last = rootNode.childCount - 1
+            val node = rootNode.getChildAt(last) as DefaultMutableTreeNode
+            rootNode.remove(last)
+            treeModel.nodesWereRemoved(rootNode, intArrayOf(last), arrayOf(node))
+        }
+        // The INVISIBLE root starts collapsed (and re-collapses if it ever hits 0 children);
+        // fine-grained inserts don't auto-expand it — only reload()/structure events did — so
+        // without this the whole tree renders "Nothing to show" despite having rows.
+        if (rootNode.childCount > 0) tree.expandPath(TreePath(rootNode.path))
     }
 
     private fun attachJobs(pipelineNode: DefaultMutableTreeNode, jobs: List<PipelineJob>) {
@@ -661,6 +666,11 @@ private class PipelinePanel(private val project: Project) {
      * keep the expansion state intact, so the LoadingRow swaps to JobRows in one paint cycle.
      */
     private fun swapChildren(parent: DefaultMutableTreeNode, newRows: List<Any>) {
+        // No-op when nothing changed — the deep refresh calls this unconditionally and an
+        // identical remove+insert cycle still repaints (visible flicker) for zero benefit.
+        val current = (0 until parent.childCount)
+            .map { (parent.getChildAt(it) as DefaultMutableTreeNode).userObject }
+        if (current == newRows) return
         val oldCount = parent.childCount
         if (oldCount > 0) {
             val removed = Array<Any>(oldCount) { parent.getChildAt(it) }
