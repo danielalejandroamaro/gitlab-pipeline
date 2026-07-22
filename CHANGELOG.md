@@ -6,19 +6,15 @@
      `getChangelog --unreleased` en cada push a main y peta si no existe.
      Las notas del release en curso se escriben AQUÍ (via /release); el PR automático
      del template las promueve a `## [X.Y.Z]` al publicar el draft de GitHub. -->
+
 ## [Unreleased]
 
-<!-- v0.0.21 (pendiente de promoción; las notas de 0.0.20 de abajo las promueve el PR #14) -->
-
-Refresh del árbol de pipelines sin flash ni colapso: la reconstrucción pasa de `reload()` global a un diff incremental por id, y el plugin de Gradle `org.jetbrains.intellij.platform` sube a 2.18.1.
+## [0.0.21] - 2026-07-22
 
 - **Fix: el refresh flasheaba el treeview y colapsaba/reabría los pipelines expandidos** (`toolWindow/PipelineToolWindowFactory.kt`) — la v0.0.18 ya había arreglado el caso "lista sin cambios" (update in situ), pero cuando la lista SÍ cambiaba (pipeline nuevo, uno que sale de la ventana de per_page=20) `rebuildTree` seguía cayendo en `treeModel.reload()` + re-expand: `reload()` colapsa todo el árbol y el `expandPath` posterior lo reabre — ese ciclo abrir/cerrar era el flash visible en cada refresh que traía cambios. Ahora `rebuildTree` es un diff incremental por id en tres pasos (borrar filas cuyo pipeline desapareció, actualizar in situ las que sobreviven en su índice, insertar solo las nuevas; eventos finos `nodesWereRemoved`/`nodesWereInserted`/`nodeChanged`, cero structure events) y **ya no existe ningún `reload()`** en el ciclo de refresh — expansión, selección y scroll sobreviven intactos siempre. Una fila reordenada se recrea desde `jobsCache` + `expandedPipelineIds` (los ids nunca se reordenan entre sí: lista ordenada por id desc, no hace falta LCS).
 - **Fix: "Nothing to show" con N pipelines cargados** (`toolWindow/PipelineToolWindowFactory.kt`) — regresión intermedia del cambio anterior detectada en QA de esta misma versión: el root invisible del `JTree` arranca colapsado y solo los structure events de `reload()` lo expandían de gratis; al eliminar `reload()`, los inserts finos poblaban el modelo pero el árbol renderizaba vacío ("7 pipelines" en el status y "Nothing to show" debajo). Fix: `rebuildTree` expande explícitamente el root invisible cuando tiene hijos.
 - **`swapChildren` ahora es no-op si los hijos no cambiaron** (`toolWindow/PipelineToolWindowFactory.kt`) — el deep refresh (botón Refresh) lo llamaba incondicionalmente por cada pipeline expandido, y un ciclo idéntico de quitar-todo/reinsertar-todo repinta con parpadeo visible a cambio de nada. La comparación de userObjects (data classes) corta antes de tocar el modelo.
 - **Bump `org.jetbrains.intellij.platform` 2.16.0 → 2.18.1** (`settings.gradle.kts`) — quita el aviso "Gradle Plugin is outdated" de `initializeIntellijPlatformPlugin` en cada build; equivale al dependabot PR #11, que puede cerrarse al pushear esta release.
-
-Nuevo tab "Packages" en el tool window: el Package Registry del proyecto visible desde el IDE, con copia de `pnpm install <paquete>` al portapapeles, borrado de packages y notificación de packages nuevos en el auto-refresh.
-
 - **Tab "Packages" en el tool window** (`toolWindow/PackagesTabPanel.kt` nuevo, `toolWindow/PipelineToolWindowFactory.kt`) — cuarto content entre "Releases" y "Logs". Lista plana con una fila por versión publicada (`nombre versión · tipo`, icono PpJar), espejo del listado del propio GitLab. Mismo chasis que el tab Releases: label de estado ("N packages" / "Cargando packages…" / "(sin packages)"), botón Refresh compartido con el servicio, y suscripción al `StateFlow` — sin polling propio. Doble click sobre una fila abre la página del package en el navegador (URL absoluta construida desde `_links.web_path`).
 - **Copiar `pnpm install` desde el menú contextual** — click-derecho sobre un package **npm** ofrece "Copiar: `pnpm install <nombre>`" y, si la fila tiene versión, "Copiar: `pnpm install <nombre>@<versión>`" (instala la versión exacta de esa fila; el item sin versión instala latest). Copia al portapapeles vía `CopyPasteManager` + balloon de confirmación. Solo aparece en packages tipo npm — en maven/generic/pypi el comando no aplica. Completa el menú "Abrir en navegador" para cualquier tipo.
 - **Borrar package desde el menú contextual** (`api/GitLabApiClient.kt`, `services/GitLabPipelineService.kt`) — "Borrar package <nombre versión>" (icono GC, tras separador) con diálogo de confirmación que avisa que se borran todos los archivos y no hay deshacer → `DELETE /api/v4/projects/:id/packages/:package_id` en background (mismo patrón HttpRequests+DELETE que `deleteRelease`) → balloon con el resultado → refresh para que la fila desaparezca. Es el purge de binarios que el borrado de releases (v0.0.17) dejó documentado como pendiente. El bridge saca el id de `notifiedPackageIds`, así que republicar la misma versión vuelve a notificar.
@@ -293,22 +289,24 @@ Primera release publicable. El proyecto pasa de scaffold de [IntelliJ Platform P
 
 - **Sideload local** — zip empaquetable con `./gradlew buildPlugin` en `build/distributions/gitlab-pipeline-watcher-0.0.1.zip` (~84 KB). Probado contra IntelliJ IDEA 2026.1 Ultimate, PyCharm 2026.1 y WebStorm 2026.1 — el plugin carga sin restart (`Plugin com.github.danielalejandroamaro.gitlabpipeline loaded without restart in 16 ms` en `idea.log`).
 
-[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.18...HEAD
-[0.0.18]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.17...0.0.18
-[0.0.17]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.16...0.0.17
-[0.0.16]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.15...0.0.16
-[0.0.15]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.14...0.0.15
-[0.0.14]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.13...0.0.14
-[0.0.13]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.12...0.0.13
-[0.0.12]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.11...0.0.12
-[0.0.11]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.10...0.0.11
-[0.0.10]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.9...0.0.10
-[0.0.9]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.8...0.0.9
-[0.0.8]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.7...0.0.8
-[0.0.7]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.6...0.0.7
-[0.0.6]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.5...0.0.6
-[0.0.5]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.4...0.0.5
-[0.0.4]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.3...0.0.4
-[0.0.3]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.2...0.0.3
-[0.0.2]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/0.0.1...0.0.2
-[0.0.1]: https://github.com/danielalejandroamaro/gitlab-pipeline/commits/0.0.1
+[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.21...HEAD
+[0.0.21]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.19...v0.0.21
+[0.0.19]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.18...v0.0.19
+[0.0.18]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.17...v0.0.18
+[0.0.17]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.16...v0.0.17
+[0.0.16]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.15...v0.0.16
+[0.0.15]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.14...v0.0.15
+[0.0.14]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.13...v0.0.14
+[0.0.13]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.12...v0.0.13
+[0.0.12]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.11...v0.0.12
+[0.0.11]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.10...v0.0.11
+[0.0.10]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.9...v0.0.10
+[0.0.9]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.8...v0.0.9
+[0.0.8]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.7...v0.0.8
+[0.0.7]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.6...v0.0.7
+[0.0.6]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.5...v0.0.6
+[0.0.5]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.4...v0.0.5
+[0.0.4]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.3...v0.0.4
+[0.0.3]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.2...v0.0.3
+[0.0.2]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.1...v0.0.2
+[0.0.1]: https://github.com/danielalejandroamaro/gitlab-pipeline/commits/v0.0.1
