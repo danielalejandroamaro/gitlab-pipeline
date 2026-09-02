@@ -4,11 +4,9 @@ import com.github.danielalejandroamaro.gitlabpipeline.MyBundle
 import com.github.danielalejandroamaro.gitlabpipeline.model.Job as PipelineJob
 import com.github.danielalejandroamaro.gitlabpipeline.model.Pipeline
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
-import com.github.danielalejandroamaro.gitlabpipeline.model.StageSummary
 import com.github.danielalejandroamaro.gitlabpipeline.services.GitLabCiDetector
 import com.github.danielalejandroamaro.gitlabpipeline.services.GitLabPipelineService
 import com.github.danielalejandroamaro.gitlabpipeline.services.PipelineEventLog
-import com.github.danielalejandroamaro.gitlabpipeline.ui.ColoredDotIcon
 import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.application.ApplicationManager
@@ -17,15 +15,11 @@ import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
-import com.intellij.ui.ColoredTreeCellRenderer
-import com.intellij.ui.JBColor
-import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.treeStructure.Tree
-import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -36,22 +30,15 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.awt.BorderLayout
-import java.awt.Color
-import java.awt.Dimension
-import java.awt.FlowLayout
-import java.awt.Font
-import java.awt.Graphics
 import java.awt.datatransfer.StringSelection
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.BorderFactory
-import javax.swing.Icon
 import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JMenuItem
 import javax.swing.JPanel
 import javax.swing.JPopupMenu
-import javax.swing.JTextArea
 import javax.swing.JTree
 import javax.swing.SwingConstants
 import javax.swing.event.TreeExpansionEvent
@@ -59,7 +46,6 @@ import javax.swing.event.TreeWillExpandListener
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreePath
-import javax.swing.Timer as SwingTimer
 
 class PipelineToolWindowFactory : ToolWindowFactory {
 
@@ -809,324 +795,5 @@ private class PipelinePanel(private val project: Project) {
 
         /** Right-edge padding (in pixels) around the inline copy icon on tag pipeline rows. */
         private const val COPY_ICON_RIGHT_PADDING = 4
-    }
-}
-
-private sealed class TreeRow
-private data class PipelineRow(
-    val pipeline: Pipeline,
-    val staleTag: Boolean = false,
-    /** True when the latest stage succeeded but an earlier stage failed — render row as amber. */
-    val mixedAmber: Boolean = false,
-) : TreeRow()
-private data class JobRow(val job: PipelineJob) : TreeRow()
-private object LoadingRow : TreeRow()
-private object EmptyRow : TreeRow()
-
-/**
- * Returns true when the chronologically last stage of [jobs] is SUCCESS but some earlier stage
- * is FAILED — the "partial success" case the user wants painted amber instead of red. Empty or
- * single-stage pipelines never qualify. ponytail: timestamp comparison is string-based on the
- * ISO-8601 strings GitLab returns; cheap and correct since they share zone (Z).
- */
-internal fun computeMixedAmber(jobs: List<PipelineJob>): Boolean {
-    if (jobs.isEmpty()) return false
-    val stages = jobs.groupBy { it.stage }
-        .map { (name, js) -> StageSummary.fromJobs(name, js) }
-    if (stages.size < 2) return false
-    val last = stages.maxByOrNull { st ->
-        st.jobs.mapNotNull { it.finishedAt ?: it.startedAt }.maxOrNull() ?: ""
-    } ?: return false
-    if (last.status != PipelineStatus.SUCCESS) return false
-    return stages.any { it !== last && it.status == PipelineStatus.FAILED }
-}
-
-private class PipelineTreeRenderer : ColoredTreeCellRenderer() {
-
-    /** Set to true on tag-pipeline rows so paintComponent draws the inline copy icon. */
-    private var paintCopyIcon: Boolean = false
-    /** Set to true on JobRow with artifacts so paintComponent draws the inline download icon. */
-    private var paintDownloadIcon: Boolean = false
-
-    override fun customizeCellRenderer(
-        tree: JTree, value: Any?, selected: Boolean, expanded: Boolean,
-        leaf: Boolean, row: Int, hasFocus: Boolean,
-    ) {
-        paintCopyIcon = false
-        paintDownloadIcon = false
-        val node = value as? DefaultMutableTreeNode ?: return
-        when (val data = node.userObject) {
-            is PipelineRow -> {
-                val p = data.pipeline
-                icon = if (data.mixedAmber) ColoredDotIcon.AMBER else iconFor(p.status)
-                // Format: "action/version  #id" — the version is the ref/tag/branch, so a double
-                // click can copy it directly without the user having to scan past the id first.
-                val action = p.source ?: "push"
-                val version = p.ref?.takeIf { it.isNotBlank() } ?: p.sha?.take(8) ?: "?"
-                val versionAttrs = if (data.staleTag) {
-                    SimpleTextAttributes(SimpleTextAttributes.STYLE_STRIKEOUT, null)
-                } else SimpleTextAttributes.REGULAR_ATTRIBUTES
-                append("$action/$version", versionAttrs)
-                if (data.staleTag) append("  (tag desapuntado)", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-                append("  #${p.id}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-                if (p.tag && !p.ref.isNullOrBlank()) {
-                    paintCopyIcon = true
-                    toolTipText = if (data.staleTag)
-                        "Tag ${p.ref} fue reapuntado a otro commit; este pipeline es histórico."
-                    else "Doble click copia la versión (${p.ref}); click-derecho para navegar"
-                } else if (!p.ref.isNullOrBlank()) {
-                    toolTipText = "Doble click copia la versión (${p.ref}); click-derecho para navegar"
-                }
-            }
-            is JobRow -> {
-                icon = iconFor(data.job.status)
-                append("${data.job.stage} → ${data.job.name}", SimpleTextAttributes.REGULAR_ATTRIBUTES)
-                data.job.duration?.let {
-                    append("  (${it.toInt()}s)", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-                }
-                if (data.job.hasArtifacts) {
-                    paintDownloadIcon = true
-                    val sizeLabel = data.job.artifactsSize?.let { " · ${humanBytesShort(it)}" } ?: ""
-                    val nameLabel = data.job.artifactsFilename ?: "artifacts.zip"
-                    toolTipText = "Click en el icono ⬇ para descargar artifacts ($nameLabel$sizeLabel)"
-                }
-            }
-            LoadingRow -> {
-                icon = AllIcons.Process.Step_1
-                append("cargando jobs…", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-            }
-            EmptyRow -> {
-                icon = AllIcons.General.QuestionDialog
-                append("(sin jobs)", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-            }
-        }
-    }
-
-    /**
-     * Reserve trailing space for the copy/download icon so it doesn't get clipped by the cell's
-     * preferred width. JTree sizes the cell to this preferredSize before painting.
-     */
-    override fun getPreferredSize(): Dimension {
-        val base = super.getPreferredSize()
-        if (paintCopyIcon) {
-            base.width += AllIcons.Actions.Copy.iconWidth + COPY_ICON_TOTAL_PADDING
-        }
-        if (paintDownloadIcon) {
-            base.width += AllIcons.Actions.Download.iconWidth + COPY_ICON_TOTAL_PADDING
-        }
-        return base
-    }
-
-    override fun paintComponent(g: Graphics) {
-        super.paintComponent(g)
-        if (paintCopyIcon) {
-            val copy = AllIcons.Actions.Copy
-            val iconX = width - copy.iconWidth - COPY_ICON_RIGHT_PAD_PX
-            val iconY = (height - copy.iconHeight) / 2
-            copy.paintIcon(this, g, iconX, iconY)
-        }
-        if (paintDownloadIcon) {
-            val dl = AllIcons.Actions.Download
-            val iconX = width - dl.iconWidth - COPY_ICON_RIGHT_PAD_PX
-            val iconY = (height - dl.iconHeight) / 2
-            dl.paintIcon(this, g, iconX, iconY)
-        }
-    }
-
-    private fun humanBytesShort(bytes: Long): String {
-        if (bytes < 1024) return "$bytes B"
-        val units = arrayOf("KB", "MB", "GB", "TB")
-        var v = bytes.toDouble() / 1024
-        var i = 0
-        while (v >= 1024 && i < units.size - 1) { v /= 1024; i++ }
-        return String.format("%.1f %s", v, units[i])
-    }
-
-    private fun iconFor(status: PipelineStatus): Icon = when (status) {
-        PipelineStatus.SUCCESS -> ColoredDotIcon.GREEN
-        PipelineStatus.FAILED -> ColoredDotIcon.RED
-        PipelineStatus.CANCELING, PipelineStatus.CANCELED, PipelineStatus.SKIPPED -> ColoredDotIcon.GREY
-        PipelineStatus.MANUAL, PipelineStatus.SCHEDULED -> ColoredDotIcon.AMBER
-        PipelineStatus.RUNNING -> AllIcons.Actions.Execute
-        PipelineStatus.PENDING, PipelineStatus.WAITING_FOR_RESOURCE,
-        PipelineStatus.PREPARING, PipelineStatus.CREATED -> AllIcons.Actions.Pause
-        PipelineStatus.UNKNOWN -> AllIcons.General.QuestionDialog
-    }
-
-    private companion object {
-        // Right padding bumped to 12 so the inline icon sits visually inside the row's hover/
-        // selection highlight instead of hugging the cell's right edge (where it looked clipped
-        // outside the highlight on dark themes).
-        private const val COPY_ICON_RIGHT_PAD_PX = 12
-        private const val COPY_ICON_LEFT_PAD_PX = 8
-        private const val COPY_ICON_TOTAL_PADDING = COPY_ICON_LEFT_PAD_PX + COPY_ICON_RIGHT_PAD_PX
-    }
-}
-
-/**
- * Live tail of the currently-running job. Visible only while at least one job in the
- * followed pipeline is RUNNING; collapses to zero-height otherwise so the pipelines
- * tree gets all the room when there's nothing live to see.
- */
-private class LiveLogsPanel(
-    private val project: Project,
-    private val service: GitLabPipelineService,
-    private val parentScope: CoroutineScope,
-) {
-    private val title = JBLabel("(no hay job corriendo)").apply {
-        border = BorderFactory.createEmptyBorder(4, 8, 2, 8)
-    }
-    private val area = JTextArea("").apply {
-        isEditable = false
-        lineWrap = false
-        font = Font(Font.MONOSPACED, Font.PLAIN, 11)
-        background = JBColor(Color(0xF7F7F7), Color(0x2B2B2B))
-    }
-    private val scrollPane = JBScrollPane(area).apply {
-        preferredSize = Dimension(0, JBUI.scale(180))
-    }
-
-    val root: JComponent = JPanel(BorderLayout()).apply {
-        border = BorderFactory.createMatteBorder(1, 0, 0, 0, JBColor.border())
-        add(title, BorderLayout.NORTH)
-        add(scrollPane, BorderLayout.CENTER)
-        isVisible = false
-    }
-
-    @Volatile private var currentJobId: Long? = null
-    private var pollTimer: SwingTimer? = null
-    private var stateSubscription: Job? = null
-
-    init {
-        stateSubscription = parentScope.launch {
-            service.state.collect { state ->
-                val running = state.stages.firstOrNull { !it.status.isTerminal }
-                    ?.jobs?.firstOrNull { it.status == PipelineStatus.RUNNING }
-                ApplicationManager.getApplication().invokeLater { onRunningJobChanged(running) }
-            }
-        }
-    }
-
-    private fun onRunningJobChanged(running: PipelineJob?) {
-        if (running == null) {
-            stopPolling()
-            root.isVisible = false
-            root.revalidate()
-            return
-        }
-        root.isVisible = true
-        if (running.id != currentJobId) {
-            currentJobId = running.id
-            title.text = "Runner log — ${running.stage} → ${running.name} (#${running.id})"
-            area.text = "(cargando log…)"
-            startPolling()
-            fetchTraceAsync()
-        }
-    }
-
-    private fun startPolling() {
-        stopPolling()
-        pollTimer = SwingTimer(3_000) { fetchTraceAsync() }.apply {
-            isRepeats = true
-            start()
-        }
-    }
-
-    private fun stopPolling() {
-        pollTimer?.stop()
-        pollTimer = null
-    }
-
-    private fun fetchTraceAsync() {
-        val jobId = currentJobId ?: return
-        parentScope.launch(Dispatchers.IO) {
-            val trace = service.fetchJobTrace(jobId)
-            if (trace != null) {
-                ApplicationManager.getApplication().invokeLater {
-                    val verticalBar = scrollPane.verticalScrollBar
-                    val wasAtBottom = verticalBar.value + verticalBar.visibleAmount >= verticalBar.maximum - 4
-                    if (area.text != trace) area.text = trace
-                    if (wasAtBottom) {
-                        ApplicationManager.getApplication().invokeLater {
-                            verticalBar.value = verticalBar.maximum
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fun dispose() {
-        stateSubscription?.cancel()
-        stopPolling()
-    }
-}
-
-/**
- * Horizontal strip of "stage chips" — one per stage of the currently-followed
- * pipeline. The chip for the active stage is highlighted.
- */
-private class StagesStripPanel : JPanel(FlowLayout(FlowLayout.LEFT, 6, 4)) {
-
-    init {
-        border = BorderFactory.createCompoundBorder(
-            BorderFactory.createMatteBorder(1, 0, 0, 0, JBColor.border()),
-            JBUI.Borders.empty(4, 8),
-        )
-        isVisible = false
-    }
-
-    fun update(stages: List<StageSummary>, currentStage: String?) {
-        removeAll()
-        if (stages.isEmpty()) {
-            isVisible = false
-            revalidate()
-            repaint()
-            return
-        }
-        isVisible = true
-        for ((index, stage) in stages.withIndex()) {
-            add(StageChip(stage, isCurrent = stage.name == currentStage))
-            if (index < stages.size - 1) {
-                add(JBLabel("→").apply { border = JBUI.Borders.emptyLeft(2) })
-            }
-        }
-        revalidate()
-        repaint()
-    }
-}
-
-private class StageChip(stage: StageSummary, isCurrent: Boolean) : JPanel(FlowLayout(FlowLayout.LEFT, 4, 0)) {
-    init {
-        isOpaque = isCurrent
-        if (isCurrent) {
-            background = JBColor(Color(0xDCE6FF), Color(0x3A4D70))
-        }
-        border = BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(borderColor(stage.status, isCurrent), 1, true),
-            JBUI.Borders.empty(2, 6),
-        )
-        add(JBLabel(iconFor(stage.status)))
-        val countLabel = "${stage.succeededJobs}/${stage.totalJobs}"
-        val nameSuffix = if (isCurrent) " (en curso)" else ""
-        add(JBLabel("${stage.name} ($countLabel)$nameSuffix"))
-    }
-
-    private fun iconFor(status: PipelineStatus): Icon = when (status) {
-        PipelineStatus.SUCCESS -> ColoredDotIcon.GREEN
-        PipelineStatus.FAILED -> ColoredDotIcon.RED
-        PipelineStatus.CANCELING, PipelineStatus.CANCELED, PipelineStatus.SKIPPED -> ColoredDotIcon.GREY
-        PipelineStatus.MANUAL, PipelineStatus.SCHEDULED -> ColoredDotIcon.AMBER
-        PipelineStatus.RUNNING -> AllIcons.Actions.Execute
-        PipelineStatus.PENDING, PipelineStatus.WAITING_FOR_RESOURCE,
-        PipelineStatus.PREPARING, PipelineStatus.CREATED -> AllIcons.Actions.Pause
-        PipelineStatus.UNKNOWN -> AllIcons.General.QuestionDialog
-    }
-
-    private fun borderColor(status: PipelineStatus, isCurrent: Boolean): Color = when {
-        isCurrent -> JBColor(Color(0x3367D6), Color(0x6BAAFF))
-        status == PipelineStatus.FAILED -> JBColor(Color(0xE53935), Color(0xE57373))
-        status == PipelineStatus.SUCCESS -> JBColor(Color(0x4CAF50), Color(0x5FB85F))
-        else -> JBColor.border()
     }
 }

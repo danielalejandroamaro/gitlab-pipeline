@@ -8,6 +8,13 @@
      del template las promueve a `## [X.Y.Z]` al publicar el draft de GitHub. -->
 ## [Unreleased]
 
+<!-- v0.1.0 (pendiente de promoción) -->
+
+Release de consolidación que estrena la serie 0.1.x: el tool window se parte en componentes con archivo propio y toda la cadena de build/CI queda al día (5 bumps de dependabot acumulados, suite verde bajo Gradle 9.7.1).
+
+- **Refactor: split de `PipelineToolWindowFactory.kt` en componentes** (`toolWindow/PipelineTreeRenderer.kt`, `toolWindow/LiveLogsPanel.kt`, `toolWindow/StagesStripPanel.kt` nuevos) — extracción verbatim de 333 líneas que vivían como clases privadas dentro del factory: el renderer del árbol con sus tipos de fila (`TreeRow`/`PipelineRow`/`JobRow`/`LoadingRow`/`EmptyRow`) y `computeMixedAmber`, el panel "Runner log" (v0.0.14) y la franja de stage chips (v0.0.13). Cero cambio de comportamiento (0 líneas añadidas al factory, solo salen); clases `internal` del mismo package, sin imports nuevos en el consumidor.
+- **Deps de build/CI al día** — acumulado desde v0.0.22, mergeado de dependabot en local (squash, formato `(#N)`): `org.jetbrains.kotlin.jvm` 2.4.0 → 2.4.10 (#12), gradle-wrapper 9.6.0 → 9.6.1 (#8) y 9.6.1 → 9.7.1 (#18), `gradle/actions` 6 → 6.2.0 (#16), `actions/setup-java` 5 → 6 (#19 — major: la action migra a ESM y a la Azul Metadata API; el workflow la usa de forma estándar). La suite completa pasó en local con el wrapper 9.7.1 antes de tagear.
+
 <!-- v0.0.22 (pendiente de promoción) -->
 
 Compatibilidad con los IDEs 2026.2: la v0.0.21 (y anteriores) **no funciona en 2026.2** — la cuenta GitLab se resuelve pero el token no ("GitLab account X has no token stored"), así que el watcher queda muerto. Esta versión lo arregla y **saca de circulación a la 0.0.21**: en 2026.2 hay que instalar 0.0.22, y en 2026.1 y anteriores 0.0.22 funciona igual que la 0.0.21 (fix retrocompatible).
