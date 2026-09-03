@@ -37,7 +37,7 @@
             implementation="com.github.danielalejandroamaro.gitlabpipeline.statusBar.PipelineStatusBarWidgetFactory"/>
         <applicationService
             serviceImplementation="com.github.danielalejandroamaro.gitlabpipeline.settings.PipelineSettings"/>
-        <applicationConfigurable
+        <projectConfigurable
             parentId="tools"
             id="com.github.danielalejandroamaro.gitlabpipeline.settings.PipelineSettingsConfigurable"
             displayName="GitLab Pipeline Watcher"

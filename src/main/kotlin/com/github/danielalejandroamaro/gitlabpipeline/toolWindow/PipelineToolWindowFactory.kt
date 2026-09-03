@@ -200,6 +200,14 @@ private class PipelinePanel(private val project: Project) {
         }
     }
 
+    private val settingsButton = JButton(AllIcons.General.Settings).apply {
+        toolTipText = "Configuración del watcher: remote a vigilar, intervalo de refresh, cuentas"
+        addActionListener {
+            com.intellij.openapi.options.ShowSettingsUtil.getInstance()
+                .showSettingsDialog(project, MyBundle["settings.displayName"])
+        }
+    }
+
     private val stagesPanel = StagesStripPanel()
     private val logsPanel = LiveLogsPanel(project, service, scope)
 
@@ -213,7 +221,13 @@ private class PipelinePanel(private val project: Project) {
     val root: JComponent = JBPanel<JBPanel<*>>(BorderLayout()).apply {
         val top = JPanel(BorderLayout()).apply {
             add(statusLabel, BorderLayout.CENTER)
-            add(refreshButton, BorderLayout.EAST)
+            add(
+                JPanel(java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 4, 0)).apply {
+                    add(refreshButton)
+                    add(settingsButton)
+                },
+                BorderLayout.EAST,
+            )
         }
         add(top, BorderLayout.NORTH)
         add(JBScrollPane(tree), BorderLayout.CENTER)

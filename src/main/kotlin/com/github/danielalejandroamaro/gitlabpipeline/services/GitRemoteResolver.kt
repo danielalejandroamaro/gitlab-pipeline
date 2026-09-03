@@ -1,6 +1,7 @@
 package com.github.danielalejandroamaro.gitlabpipeline.services
 
 import com.github.danielalejandroamaro.gitlabpipeline.auth.GitLabAuthBridge
+import com.github.danielalejandroamaro.gitlabpipeline.settings.PipelineProjectSettings
 import com.intellij.openapi.project.Project
 import git4idea.repo.GitRepositoryManager
 
@@ -18,24 +19,33 @@ object GitRemoteResolver {
     fun reposLoaded(project: Project): Boolean =
         GitRepositoryManager.getInstance(project).repositories.isNotEmpty()
 
-    /**
-     * Pick the first git remote whose host matches a configured GitLab account.
-     * Falls back to "origin" when no account match is found, so users on the very
-     * first run still see something.
-     */
-    fun resolve(project: Project): GitLabRemote? {
-        val repos = GitRepositoryManager.getInstance(project).repositories
-        if (repos.isEmpty()) return null
-
-        val candidates = repos.flatMap { repo ->
+    /** Every GitLab-shaped remote URL of every repo in the project, in git4idea order. */
+    fun candidates(project: Project): List<GitLabRemote> =
+        GitRepositoryManager.getInstance(project).repositories.flatMap { repo ->
             repo.remotes.flatMap { remote ->
                 remote.urls.mapNotNull { url ->
                     val path = GitLabAuthBridge.extractProjectPath(url) ?: return@mapNotNull null
                     GitLabRemote(url = url, projectPath = path)
                 }
             }
-        }
+        }.distinctBy { it.url }
+
+    /**
+     * Pick the remote to watch. A remote chosen by the user in Settings wins (while it still
+     * exists); otherwise: first remote whose host matches a configured GitLab account, falling
+     * back to "origin" so users on the very first run still see something.
+     */
+    fun resolve(project: Project): GitLabRemote? {
+        val repos = GitRepositoryManager.getInstance(project).repositories
+        if (repos.isEmpty()) return null
+
+        val candidates = candidates(project)
         if (candidates.isEmpty()) return null
+
+        PipelineProjectSettings.getInstance(project).preferredRemoteUrl?.let { preferred ->
+            candidates.firstOrNull { it.url == preferred }?.let { return it }
+            // preferido desaparecido (remote borrado/renombrado): cae al auto sin romper
+        }
 
         // Prefer remotes that match a configured account.
         val withAccount = candidates.firstOrNull { GitLabAuthBridge.findAccountForRemote(it.url) != null }

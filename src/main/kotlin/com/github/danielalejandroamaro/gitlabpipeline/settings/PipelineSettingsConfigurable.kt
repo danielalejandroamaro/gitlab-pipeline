@@ -2,7 +2,12 @@ package com.github.danielalejandroamaro.gitlabpipeline.settings
 
 import com.github.danielalejandroamaro.gitlabpipeline.MyBundle
 import com.github.danielalejandroamaro.gitlabpipeline.auth.GitLabAuthBridge
+import com.github.danielalejandroamaro.gitlabpipeline.services.GitLabPipelineService
+import com.github.danielalejandroamaro.gitlabpipeline.services.GitRemoteResolver
+import com.intellij.openapi.components.service
 import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
@@ -20,12 +25,17 @@ import javax.swing.SpinnerNumberModel
 
 /**
  * Settings page exposed under Settings ▸ Tools ▸ GitLab Pipeline Watcher. Lets the user
- * tweak the auto-refresh cadence, toggle the "idle polling" behavior, and inspect / re-poll the
- * GitLab account-manager binding from the official JetBrains GitLab plugin.
+ * tweak the auto-refresh cadence, toggle the "idle polling" behavior, pick which git remote
+ * to watch (repos with several remotes), and inspect / re-poll the GitLab account-manager
+ * binding from the official JetBrains GitLab plugin.
  */
-class PipelineSettingsConfigurable : Configurable {
+class PipelineSettingsConfigurable(private val project: Project) : Configurable {
 
     private val settings get() = PipelineSettings.getInstance()
+    private val projectSettings get() = PipelineProjectSettings.getInstance(project)
+
+    /** First item = auto-detect; the rest are the project's GitLab-shaped remote URLs. */
+    private val remoteCombo = ComboBox<String>()
 
     private val intervalSpinner = JSpinner(
         SpinnerNumberModel(
@@ -67,10 +77,15 @@ class PipelineSettingsConfigurable : Configurable {
         val accountsHint = JBLabel("<html>${MyBundle["settings.accountsHint"]}</html>").apply {
             border = JBUI.Borders.emptyTop(4)
         }
+        val remoteHint = JBLabel("<html>${MyBundle["settings.remoteHint"]}</html>").apply {
+            border = JBUI.Borders.emptyTop(4)
+        }
         val builder = FormBuilder.createFormBuilder()
             .addLabeledComponent(MyBundle["settings.refreshInterval"], intervalSpinner, 1, false)
             .addComponent(idlePollingCheckbox, 1)
             .addComponent(description)
+            .addLabeledComponent(MyBundle["settings.remoteLabel"], remoteCombo, 12, false)
+            .addComponent(remoteHint)
             .addComponent(accountsHeader)
             .addComponent(refreshAccountsButton)
             .addComponent(accountsScrollPane)
@@ -83,10 +98,15 @@ class PipelineSettingsConfigurable : Configurable {
         return built
     }
 
+    /** Selected remote URL, or null when "auto" is chosen. */
+    private fun selectedRemoteUrl(): String? =
+        (remoteCombo.selectedItem as? String)?.takeIf { it != MyBundle["settings.remoteAuto"] }
+
     override fun isModified(): Boolean {
         val s = settings.state
         return intervalSpinner.value != s.refreshIntervalSeconds ||
-            idlePollingCheckbox.isSelected != s.idlePollingEnabled
+            idlePollingCheckbox.isSelected != s.idlePollingEnabled ||
+            selectedRemoteUrl() != projectSettings.preferredRemoteUrl
     }
 
     override fun apply() {
@@ -94,12 +114,32 @@ class PipelineSettingsConfigurable : Configurable {
             intervalSeconds = (intervalSpinner.value as Number).toInt(),
             idlePollingEnabled = idlePollingCheckbox.isSelected,
         )
+        val remoteChanged = selectedRemoteUrl() != projectSettings.preferredRemoteUrl
+        projectSettings.preferredRemoteUrl = selectedRemoteUrl()
+        if (remoteChanged) {
+            // re-resolve ya: el cache del service se invalida solo (su key lleva el projectPath)
+            project.service<GitLabPipelineService>().refresh()
+        }
     }
 
     override fun reset() {
         val s = settings.state
         intervalSpinner.value = s.refreshIntervalSeconds
         idlePollingCheckbox.isSelected = s.idlePollingEnabled
+        reloadRemoteCombo()
+    }
+
+    /** Repuebla el combo con auto + los remotes GitLab del proyecto y selecciona el vigente. */
+    private fun reloadRemoteCombo() {
+        val auto = MyBundle["settings.remoteAuto"]
+        remoteCombo.removeAllItems()
+        remoteCombo.addItem(auto)
+        GitRemoteResolver.candidates(project).forEach { remoteCombo.addItem(it.url) }
+        val preferred = projectSettings.preferredRemoteUrl
+        remoteCombo.selectedItem =
+            if (preferred != null && (0 until remoteCombo.itemCount).any { remoteCombo.getItemAt(it) == preferred }) {
+                preferred
+            } else auto
     }
 
     override fun disposeUIResources() {
