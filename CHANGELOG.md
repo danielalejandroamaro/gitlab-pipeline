@@ -8,6 +8,10 @@
      del template las promueve a `## [X.Y.Z]` al publicar el draft de GitHub. -->
 ## [Unreleased]
 
+<!-- v0.1.1 (pendiente de promoción) -->
+
+- **Release técnica para Marketplace** — código idéntico a v0.1.0 (retag `195ae41`); existe porque JetBrains Marketplace quedó ocupado con el binario 0.1.0 del build previo al retag (sin multi-remote) y no acepta re-subir la misma versión. La 0.1.1 lleva a Marketplace el plugin completo: selección de remote + split del tool window + deps al día.
+
 <!-- v0.1.0 (pendiente de promoción) -->
 
 Release de consolidación que estrena la serie 0.1.x: selección del remote a vigilar en repos multi-remote, el tool window se parte en componentes con archivo propio y toda la cadena de build/CI queda al día (5 bumps de dependabot acumulados, suite verde bajo Gradle 9.7.1).
