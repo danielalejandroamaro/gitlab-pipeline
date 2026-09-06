@@ -9,6 +9,14 @@
 
 ## [Unreleased]
 
+<!-- v0.1.2 (pendiente de promoción) -->
+
+ETA y progreso de pipelines basados en la corrida anterior: cada job corriendo muestra cuánto lleva contra lo que tardó la última vez, y el follow estima cuánto queda del total.
+
+- **Progreso por job contra su corrida anterior** (`services/GitLabPipelineService.kt`, `toolWindow/PipelineTreeRenderer.kt`) — los jobs RUNNING del árbol pasan de no mostrar nada a `(43s / ~211s · 20%)`: transcurrido (del `startedAt` que pone GitLab, no del reloj local) / duración de la última vez que ese MISMO job terminó / porcentaje capado a 99% (nunca un 100% falso). El service mantiene un mapa `job → última duración terminada` alimentado por cada `listJobs` que pasa por él (expands, deep refresh, ticks del follow); al arrancar un follow hace **seed** con los jobs de la pipeline terminada más reciente del mismo tipo, así el primer follow tras abrir el IDE ya tiene baselines (una llamada extra, una sola vez). Sin historia previa el job muestra solo el transcurrido; los terminados quedan como estaban. El renderer recibe el estimador por constructor (`jobEstimate`), sin acoplarse al service.
+- **ETA del follow en el label de estado** (`toolWindow/PipelineToolWindowFactory.kt`) — `Following pipeline for tag X (running — etapa: build · 62% · quedan ~2m 10s)`: el total estimado es la duración de la **última pipeline SUCCESS del mismo tipo** (tag vs rama, para no mezclar los tiempos de un push de rama con los de un tag-release); el transcurrido sale del `startedAt` más temprano de los jobs. Sin baseline (proyecto recién abierto sin ninguna SUCCESS en la ventana) el label queda como antes. ponytail: un solo predictor — la última verde; media móvil o percentiles si algún día la varianza moleste (`x9d2r4`).
+- **Deps y changelog al día** — dependabot #21 (`gradle/actions` 6.2.0 → 6.3.0) mergeada en local; PR #22 del template mergeada (promoción `[Unreleased]` → `[0.1.1]`) más el commit `b1a3d6f` que restaura las secciones `[0.1.0]`/`[0.0.22]`/`[0.0.21]` que la promoción descartaba — `patchChangelog` reemplaza `[Unreleased]` con el body de la release publicada, y el body de la v0.1.1 era una nota técnica corta; las notas acumuladas se recuperaron de git con sus fechas y links de compare. PRs #20 y #15 cerradas como superseded.
+
 ## [0.1.1] - 2026-09-03
 
 - **Release técnica para Marketplace** — código idéntico a [v0.1.0](https://github.com/danielalejandroamaro/gitlab-pipeline/releases/tag/v0.1.0) (retag `195ae41`); existe porque JetBrains Marketplace quedó ocupado con el binario 0.1.0 del build previo al retag (sin multi-remote) y no acepta re-subir la misma versión. La 0.1.1 lleva a Marketplace el plugin completo: selección de remote a vigilar + split del tool window en componentes + deps de build/CI al día. Las notas completas de la serie 0.1.x viven en la release v0.1.0.

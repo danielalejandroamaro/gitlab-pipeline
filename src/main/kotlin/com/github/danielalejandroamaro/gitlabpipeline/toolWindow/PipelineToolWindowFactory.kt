@@ -82,7 +82,7 @@ private class PipelinePanel(private val project: Project) {
         // owns the gesture (copy version) without colliding with the default expand/collapse.
         // Expansion still works via the disclosure chevron on the left of the row.
         toggleClickCount = 0
-        cellRenderer = PipelineTreeRenderer()
+        cellRenderer = PipelineTreeRenderer(jobEstimate = { name -> service.jobEstimateSeconds(name) })
         addMouseListener(object : MouseAdapter() {
             // Right-click → context menu. `isPopupTrigger` is checked on both press AND release
             // because Windows fires it on release and Linux on press.
@@ -265,7 +265,7 @@ private class PipelinePanel(private val project: Project) {
                     statusLabel.text = MyBundle[
                         "toolWindow.followingTag",
                         state.followingTag,
-                        (state.following?.status?.raw ?: "?") + stageHint,
+                        (state.following?.status?.raw ?: "?") + stageHint + followEtaHint(state),
                     ] + timeHint
                 }
                 state.pipelines.isEmpty() -> statusLabel.text = MyBundle["toolWindow.empty"] + timeHint
@@ -280,6 +280,23 @@ private class PipelinePanel(private val project: Project) {
             rebuildTree(state.pipelines)
             stagesPanel.update(state.stages, state.currentStage)
         }
+    }
+
+    /**
+     * ETA de la pipeline seguida contra la última SUCCESS del mismo tipo: " · 62% · quedan ~2m 10s".
+     * Transcurrido = desde el startedAt más temprano de sus jobs (los timestamps los pone GitLab,
+     * así que no dependemos del reloj de arranque del follow). Sin baseline o sin jobs → "".
+     */
+    private fun followEtaHint(state: GitLabPipelineService.State): String {
+        val following = state.following ?: return ""
+        if (following.status.isTerminal) return ""
+        val total = service.pipelineEstimateSeconds(following.tag) ?: return ""
+        val elapsed = state.stages.flatMap { it.jobs }
+            .mapNotNull { elapsedSeconds(it.startedAt) }
+            .maxOrNull() ?: return ""
+        val pct = ((elapsed * 100) / total).coerceAtMost(99)
+        val remaining = (total - elapsed).coerceAtLeast(0)
+        return " · $pct% · quedan ~${formatSeconds(remaining)}"
     }
 
     /**

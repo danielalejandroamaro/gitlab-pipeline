@@ -31,6 +31,17 @@ internal object EmptyRow : TreeRow()
  * single-stage pipelines never qualify. ponytail: timestamp comparison is string-based on the
  * ISO-8601 strings GitLab returns; cheap and correct since they share zone (Z).
  */
+/** Segundos transcurridos desde [startedAt] (ISO-8601 de GitLab), o null si no parsea. */
+internal fun elapsedSeconds(startedAt: String?): Long? = startedAt?.let {
+    runCatching {
+        java.time.Duration.between(java.time.Instant.parse(it), java.time.Instant.now()).seconds
+    }.getOrNull()?.coerceAtLeast(0)
+}
+
+/** "3m 25s" / "45s" — formato compacto para ETAs. */
+internal fun formatSeconds(s: Long): String =
+    if (s >= 60) "${s / 60}m ${s % 60}s" else "${s}s"
+
 internal fun computeMixedAmber(jobs: List<PipelineJob>): Boolean {
     if (jobs.isEmpty()) return false
     val stages = jobs.groupBy { it.stage }
@@ -43,7 +54,10 @@ internal fun computeMixedAmber(jobs: List<PipelineJob>): Boolean {
     return stages.any { it !== last && it.status == PipelineStatus.FAILED }
 }
 
-internal class PipelineTreeRenderer : ColoredTreeCellRenderer() {
+internal class PipelineTreeRenderer(
+    /** Duración de la última corrida terminada del job con ese nombre (s), o null sin historia. */
+    private val jobEstimate: (String) -> Double? = { null },
+) : ColoredTreeCellRenderer() {
 
     /** Set to true on tag-pipeline rows so paintComponent draws the inline copy icon. */
     private var paintCopyIcon: Boolean = false
@@ -83,7 +97,22 @@ internal class PipelineTreeRenderer : ColoredTreeCellRenderer() {
             is JobRow -> {
                 icon = iconFor(data.job.status)
                 append("${data.job.stage} → ${data.job.name}", SimpleTextAttributes.REGULAR_ATTRIBUTES)
-                data.job.duration?.let {
+                if (data.job.status == PipelineStatus.RUNNING) {
+                    // Progreso contra la corrida anterior del MISMO job: "(43s / ~211s · 20%)".
+                    // Sin baseline (primer run que vemos): solo el transcurrido.
+                    val elapsed = data.job.duration?.toLong() ?: elapsedSeconds(data.job.startedAt)
+                    val est = jobEstimate(data.job.name)?.toLong()
+                    when {
+                        elapsed != null && est != null && est > 0 -> {
+                            val pct = ((elapsed * 100) / est).coerceAtMost(99)
+                            append(
+                                "  (${formatSeconds(elapsed)} / ~${formatSeconds(est)} · $pct%)",
+                                SimpleTextAttributes.GRAYED_ATTRIBUTES,
+                            )
+                        }
+                        elapsed != null -> append("  (${formatSeconds(elapsed)})", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                    }
+                } else data.job.duration?.let {
                     append("  (${it.toInt()}s)", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 }
                 if (data.job.hasArtifacts) {

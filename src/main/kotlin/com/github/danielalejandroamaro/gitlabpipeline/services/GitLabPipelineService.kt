@@ -108,6 +108,34 @@ class GitLabPipelineService(
     @Volatile private var firstFetchSeeded = false
 
     /**
+     * job name → duration (s) of its most recent FINISHED occurrence. Fed by every listJobs
+     * result that passes through the service; the UI uses it to estimate/progress running jobs
+     * ("la vez anterior tardó X"). In-memory only — a follow re-seeds it from the previous
+     * completed pipeline, so IDE restarts aren't blind.
+     */
+    private val lastJobDurations = java.util.concurrent.ConcurrentHashMap<String, Double>()
+
+    /** tag?→ total duration (s) of the most recent SUCCESS pipeline of that kind (tag vs branch). */
+    private val lastPipelineDurations = java.util.concurrent.ConcurrentHashMap<Boolean, Long>()
+
+    private fun recordJobDurations(jobs: List<com.github.danielalejandroamaro.gitlabpipeline.model.Job>) {
+        for (j in jobs) {
+            val d = j.duration ?: continue
+            if (j.status.isTerminal && d > 0) lastJobDurations[j.name] = d
+        }
+    }
+
+    /** Duración del mismo job la última vez que terminó, o null si nunca lo vimos acabar. */
+    fun jobEstimateSeconds(jobName: String): Double? = lastJobDurations[jobName]
+
+    /**
+     * Total estimado de una pipeline (tag o rama) = duración de la última SUCCESS de su tipo.
+     * ponytail: un solo predictor (la última verde); media móvil o percentiles si algún día
+     * la varianza moleste.
+     */
+    fun pipelineEstimateSeconds(tag: Boolean): Long? = lastPipelineDurations[tag]
+
+    /**
      * Last error category we balloon'd (e.g. `NO_REMOTE`, `NO_ACCOUNT`, `NO_TOKEN`, `NO_PROJECT`).
      * Used to dedupe error balloons when the same failure recurs every tick of the auto-refresh
      * loop — the user only sees one toast per error type until either the error clears (success)
@@ -220,7 +248,7 @@ class GitLabPipelineService(
     fun fetchJobs(pipelineId: Long): List<com.github.danielalejandroamaro.gitlabpipeline.model.Job>? {
         val client = cachedClient ?: return null
         val pid = cachedProjectId ?: return null
-        return client.listJobs(pid, pipelineId)
+        return client.listJobs(pid, pipelineId)?.also { recordJobDurations(it) }
     }
 
     /** Re-check `.gitlab-ci.yml` presence (called from VFS listener / refresh). */
@@ -312,6 +340,11 @@ class GitLabPipelineService(
             return client to projectId
         }
         clearErrorDedupe()
+        // La última SUCCESS de cada tipo (tag/rama) es el predictor de duración total.
+        for (tagKind in listOf(true, false)) {
+            pipelines.firstOrNull { it.tag == tagKind && it.status == PipelineStatus.SUCCESS && (it.duration ?: 0) > 0 }
+                ?.let { lastPipelineDurations[tagKind] = it.duration!! }
+        }
         val previousById = _state.value.pipelines.associateBy { it.id }
         // Pull releases in the same tick — one extra GET per refresh. Failures are non-fatal:
         // we keep the previous list so a transient blip doesn't blank the Releases tab.
@@ -607,9 +640,16 @@ class GitLabPipelineService(
     }
 
     private suspend fun followUntilTerminal(client: GitLabApiClient, projectId: Long, pipelineId: Long) {
+        // Seed de estimaciones: los jobs de la pipeline TERMINADA más reciente del mismo tipo,
+        // para que el primer follow tras abrir el IDE ya tenga baselines por job.
+        val followed = _state.value.following
+        _state.value.pipelines
+            .firstOrNull { it.id != pipelineId && it.tag == (followed?.tag ?: true) && it.status.isTerminal }
+            ?.let { prev -> client.listJobs(projectId, prev.id)?.let(::recordJobDurations) }
         while (true) {
             val updated = client.getPipeline(projectId, pipelineId) ?: break
             val jobs = client.listJobs(projectId, pipelineId)
+            recordJobDurations(jobs.orEmpty())
             val stages = buildStages(jobs)
             val currentStage = stages.firstOrNull { !it.status.isTerminal }?.name
             _state.value = _state.value.copy(
