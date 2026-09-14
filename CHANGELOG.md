@@ -9,9 +9,7 @@
 
 ## [Unreleased]
 
-<!-- v0.1.4 (pendiente de promoción) -->
-
-Limpieza de los avisos del Plugin Verifier de Marketplace sobre la 0.1.3: fuera el único uso de API programada para eliminación y el constructor deprecado del bundle, que además deja de llamarse `MyBundle`.
+## [0.1.4] - 2026-09-14
 
 - **Fix: API "scheduled for removal" en el combo de idioma** (`settings/PipelineSettingsConfigurable.kt`) — el verificador de Marketplace, contra IntelliJ IDEA 2026.2.2 y 2026.3 EAP, marcaba 1 uso de API a eliminar en futuras versiones: `SimpleListCellRenderer.create(String, Function)`, introducido en la 0.1.3 para pintar el combo "Idioma del plugin". Pasa a la variante `create(Customizer)` (`{ label, tag, _ -> label.text = … }`). Sin el cambio, la página de Settings dejaría de cargar en la versión del IDE que retire el método.
 - **Fix: constructor deprecado de `DynamicBundle`** (`PipelineBundle.kt`) — `DynamicBundle(String)` está deprecado en 2026.3 (en 2026.2 aún no lo marca); se usa `DynamicBundle(PipelineBundle::class.java, BUNDLE)`, que además fija el classloader del plugin para resolver el bundle.
@@ -71,9 +69,6 @@ Refresh del árbol de pipelines sin flash ni colapso: la reconstrucción pasa de
 - **Fix: "Nothing to show" con N pipelines cargados** (`toolWindow/PipelineToolWindowFactory.kt`) — regresión intermedia del cambio anterior detectada en QA de esta misma versión: el root invisible del `JTree` arranca colapsado y solo los structure events de `reload()` lo expandían de gratis; al eliminar `reload()`, los inserts finos poblaban el modelo pero el árbol renderizaba vacío ("7 pipelines" en el status y "Nothing to show" debajo). Fix: `rebuildTree` expande explícitamente el root invisible cuando tiene hijos.
 - **`swapChildren` ahora es no-op si los hijos no cambiaron** (`toolWindow/PipelineToolWindowFactory.kt`) — el deep refresh (botón Refresh) lo llamaba incondicionalmente por cada pipeline expandido, y un ciclo idéntico de quitar-todo/reinsertar-todo repinta con parpadeo visible a cambio de nada. La comparación de userObjects (data classes) corta antes de tocar el modelo.
 - **Bump `org.jetbrains.intellij.platform` 2.16.0 → 2.18.1** (`settings.gradle.kts`) — quita el aviso "Gradle Plugin is outdated" de `initializeIntellijPlatformPlugin` en cada build; equivale al dependabot PR #11, que puede cerrarse al pushear esta release.
-
-Nuevo tab "Packages" en el tool window: el Package Registry del proyecto visible desde el IDE, con copia de `pnpm install <paquete>` al portapapeles, borrado de packages y notificación de packages nuevos en el auto-refresh.
-
 - **Tab "Packages" en el tool window** (`toolWindow/PackagesTabPanel.kt` nuevo, `toolWindow/PipelineToolWindowFactory.kt`) — cuarto content entre "Releases" y "Logs". Lista plana con una fila por versión publicada (`nombre versión · tipo`, icono PpJar), espejo del listado del propio GitLab. Mismo chasis que el tab Releases: label de estado ("N packages" / "Cargando packages…" / "(sin packages)"), botón Refresh compartido con el servicio, y suscripción al `StateFlow` — sin polling propio. Doble click sobre una fila abre la página del package en el navegador (URL absoluta construida desde `_links.web_path`).
 - **Copiar `pnpm install` desde el menú contextual** — click-derecho sobre un package **npm** ofrece "Copiar: `pnpm install <nombre>`" y, si la fila tiene versión, "Copiar: `pnpm install <nombre>@<versión>`" (instala la versión exacta de esa fila; el item sin versión instala latest). Copia al portapapeles vía `CopyPasteManager` + balloon de confirmación. Solo aparece en packages tipo npm — en maven/generic/pypi el comando no aplica. Completa el menú "Abrir en navegador" para cualquier tipo.
 - **Borrar package desde el menú contextual** (`api/GitLabApiClient.kt`, `services/GitLabPipelineService.kt`) — "Borrar package <nombre versión>" (icono GC, tras separador) con diálogo de confirmación que avisa que se borran todos los archivos y no hay deshacer → `DELETE /api/v4/projects/:id/packages/:package_id` en background (mismo patrón HttpRequests+DELETE que `deleteRelease`) → balloon con el resultado → refresh para que la fila desaparezca. Es el purge de binarios que el borrado de releases (v0.0.17) dejó documentado como pendiente. El bridge saca el id de `notifiedPackageIds`, así que republicar la misma versión vuelve a notificar.
@@ -348,7 +343,8 @@ Primera release publicable. El proyecto pasa de scaffold de [IntelliJ Platform P
 
 - **Sideload local** — zip empaquetable con `./gradlew buildPlugin` en `build/distributions/gitlab-pipeline-watcher-0.0.1.zip` (~84 KB). Probado contra IntelliJ IDEA 2026.1 Ultimate, PyCharm 2026.1 y WebStorm 2026.1 — el plugin carga sin restart (`Plugin com.github.danielalejandroamaro.gitlabpipeline loaded without restart in 16 ms` en `idea.log`).
 
-[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.0...v0.1.1
