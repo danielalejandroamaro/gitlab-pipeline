@@ -1,6 +1,6 @@
 package com.github.danielalejandroamaro.gitlabpipeline.statusBar
 
-import com.github.danielalejandroamaro.gitlabpipeline.MyBundle
+import com.github.danielalejandroamaro.gitlabpipeline.PipelineBundle
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
 import com.github.danielalejandroamaro.gitlabpipeline.services.GitLabPipelineService
 import com.github.danielalejandroamaro.gitlabpipeline.ui.ColoredDotIcon
@@ -54,7 +54,7 @@ class LeftPipelineIndicator(
         border = JBUI.Borders.empty(0, 6, 0, 4)
         cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
         icon = ColoredDotIcon.GREY
-        toolTipText = "GitLab Pipeline — (${MyBundle["leftIndicator.noDataYet"]})"
+        toolTipText = "GitLab Pipeline — (${PipelineBundle["leftIndicator.noDataYet"]})"
         addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent?) {
                 currentUrl?.let { if (it.isNotBlank()) BrowserUtil.browse(it) }
@@ -70,12 +70,12 @@ class LeftPipelineIndicator(
                 currentInfo = buildString {
                     append("GitLab pipeline ")
                     if (active == null) {
-                        append(MyBundle["leftIndicator.noData"])
+                        append(PipelineBundle["leftIndicator.noData"])
                     } else {
                         append("#").append(active.id)
                         active.ref?.let { append(" · ").append(it) }
                         append(" — ").append(active.status.raw)
-                        state.currentStage?.let { append("\n").append(MyBundle["statusBar.currentStage"]).append(" ").append(it) }
+                        state.currentStage?.let { append("\n").append(PipelineBundle["statusBar.currentStage"]).append(" ").append(it) }
                         if (state.stages.isNotEmpty()) {
                             val summary = state.stages.joinToString(" · ") { "${it.name} ${it.succeededJobs}/${it.totalJobs}" }
                             append("\nstages: ").append(summary)

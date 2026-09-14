@@ -10,14 +10,14 @@ import java.util.Locale
 import java.util.ResourceBundle
 
 @NonNls
-private const val BUNDLE = "messages.MyBundle"
+private const val BUNDLE = "messages.PipelineBundle"
 
 /**
  * Plugin strings: English (base), Spanish (`_es`) and Simplified Chinese (`_zh_CN`).
  * "Auto" follows the IDE language (DynamicBundle); an explicit choice in Settings overrides it,
  * because the IDE can't be switched to Spanish (no JetBrains language pack for it).
  */
-object MyBundle : DynamicBundle(BUNDLE) {
+object PipelineBundle : DynamicBundle(PipelineBundle::class.java, BUNDLE) {
 
     operator fun get(@PropertyKey(resourceBundle = BUNDLE) key: String, vararg params: Any) =
         msg(key, params)
@@ -39,7 +39,7 @@ object MyBundle : DynamicBundle(BUNDLE) {
 
     /** No-fallback control: "en" must load the base file, not the JVM default locale's. */
     fun bundleFor(tag: String): ResourceBundle = ResourceBundle.getBundle(
-        BUNDLE, Locale.forLanguageTag(tag), MyBundle::class.java.classLoader,
+        BUNDLE, Locale.forLanguageTag(tag), PipelineBundle::class.java.classLoader,
         ResourceBundle.Control.getNoFallbackControl(ResourceBundle.Control.FORMAT_PROPERTIES),
     )
 }

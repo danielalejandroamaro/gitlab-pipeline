@@ -65,9 +65,9 @@ class MyPluginTest : BasePlatformTestCase() {
 
     fun testBundlesSameKeysAndPlaceholders() {
         val placeholders = Regex("""\{\d+}""")
-        val base = MyBundle.bundleFor("en")
+        val base = PipelineBundle.bundleFor("en")
         for (tag in listOf("es", "zh-CN")) {
-            val b = MyBundle.bundleFor(tag)
+            val b = PipelineBundle.bundleFor(tag)
             assertFalse("$tag fell back to base", b.locale.toString().isEmpty())
             assertEquals("$tag keys", base.keySet(), b.keySet())
             for (k in base.keySet()) {
@@ -83,12 +83,12 @@ class MyPluginTest : BasePlatformTestCase() {
         val old = s.language
         try {
             s.language = "es"
-            assertEquals("Abrir", MyBundle["releases.downloadResult.open"])
-            assertEquals("Reintentar pipeline #27223", MyBundle["pipeline.menu.retry", 27223L])
+            assertEquals("Abrir", PipelineBundle["releases.downloadResult.open"])
+            assertEquals("Reintentar pipeline #27223", PipelineBundle["pipeline.menu.retry", 27223L])
             s.language = "zh-CN"
-            assertEquals("打开", MyBundle["releases.downloadResult.open"])
+            assertEquals("打开", PipelineBundle["releases.downloadResult.open"])
             s.language = "en"
-            assertEquals("Open", MyBundle["releases.downloadResult.open"])
+            assertEquals("Open", PipelineBundle["releases.downloadResult.open"])
         } finally {
             s.language = old
         }

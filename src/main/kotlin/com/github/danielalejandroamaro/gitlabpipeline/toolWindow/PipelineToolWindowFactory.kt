@@ -1,6 +1,6 @@
 package com.github.danielalejandroamaro.gitlabpipeline.toolWindow
 
-import com.github.danielalejandroamaro.gitlabpipeline.MyBundle
+import com.github.danielalejandroamaro.gitlabpipeline.PipelineBundle
 import com.github.danielalejandroamaro.gitlabpipeline.model.Job as PipelineJob
 import com.github.danielalejandroamaro.gitlabpipeline.model.Pipeline
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
@@ -58,10 +58,10 @@ class PipelineToolWindowFactory : ToolWindowFactory {
         val packagesPanel = PackagesTabPanel(project)
         val eventLogPanel = EventLogTabPanel(project)
         val cf = ContentFactory.getInstance()
-        toolWindow.contentManager.addContent(cf.createContent(pipelinesPanel.root, MyBundle["toolWindow.tab.pipelines"], false))
-        toolWindow.contentManager.addContent(cf.createContent(releasesPanel.root, MyBundle["toolWindow.tab.releases"], false))
-        toolWindow.contentManager.addContent(cf.createContent(packagesPanel.root, MyBundle["toolWindow.tab.packages"], false))
-        toolWindow.contentManager.addContent(cf.createContent(eventLogPanel.root, MyBundle["toolWindow.tab.logs"], false))
+        toolWindow.contentManager.addContent(cf.createContent(pipelinesPanel.root, PipelineBundle["toolWindow.tab.pipelines"], false))
+        toolWindow.contentManager.addContent(cf.createContent(releasesPanel.root, PipelineBundle["toolWindow.tab.releases"], false))
+        toolWindow.contentManager.addContent(cf.createContent(packagesPanel.root, PipelineBundle["toolWindow.tab.packages"], false))
+        toolWindow.contentManager.addContent(cf.createContent(eventLogPanel.root, PipelineBundle["toolWindow.tab.logs"], false))
     }
 }
 
@@ -181,8 +181,8 @@ private class PipelinePanel(private val project: Project) {
         border = BorderFactory.createEmptyBorder(4, 8, 4, 8)
     }
 
-    private val refreshButton = JButton(MyBundle["toolWindow.refresh"]).apply {
-        toolTipText = MyBundle["toolWindow.refreshTooltip"]
+    private val refreshButton = JButton(PipelineBundle["toolWindow.refresh"]).apply {
+        toolTipText = PipelineBundle["toolWindow.refreshTooltip"]
         addActionListener {
             // DEEP refresh — distinto del auto-loop ligero cada 3s:
             //  1. suelta el jobsCache de los pipelines NO expandidos (re-fetch al expandir);
@@ -199,10 +199,10 @@ private class PipelinePanel(private val project: Project) {
     }
 
     private val settingsButton = JButton(AllIcons.General.Settings).apply {
-        toolTipText = MyBundle["toolWindow.settingsTooltip"]
+        toolTipText = PipelineBundle["toolWindow.settingsTooltip"]
         addActionListener {
             com.intellij.openapi.options.ShowSettingsUtil.getInstance()
-                .showSettingsDialog(project, MyBundle["settings.displayName"])
+                .showSettingsDialog(project, PipelineBundle["settings.displayName"])
         }
     }
 
@@ -253,21 +253,21 @@ private class PipelinePanel(private val project: Project) {
         ApplicationManager.getApplication().invokeLater {
             refreshButton.isEnabled = !state.isRefreshing
             val timeHint = if (state.lastRefreshedAt > 0L) {
-                " · " + MyBundle["toolWindow.updatedAt", formatHms(state.lastRefreshedAt)]
+                " · " + PipelineBundle["toolWindow.updatedAt", formatHms(state.lastRefreshedAt)]
             } else ""
             when {
-                !state.ciEnabled -> statusLabel.text = MyBundle["toolWindow.noCi"]
+                !state.ciEnabled -> statusLabel.text = PipelineBundle["toolWindow.noCi"]
                 state.errorMessage != null -> statusLabel.text = state.errorMessage + timeHint
                 state.followingTag != null -> {
-                    val stageHint = state.currentStage?.let { MyBundle["toolWindow.stageHint", it] } ?: ""
-                    statusLabel.text = MyBundle[
+                    val stageHint = state.currentStage?.let { PipelineBundle["toolWindow.stageHint", it] } ?: ""
+                    statusLabel.text = PipelineBundle[
                         "toolWindow.followingTag",
                         state.followingTag,
                         (state.following?.status?.raw ?: "?") + stageHint + followEtaHint(state),
                     ] + timeHint
                 }
-                state.pipelines.isEmpty() -> statusLabel.text = MyBundle["toolWindow.empty"] + timeHint
-                else -> statusLabel.text = MyBundle["toolWindow.pipelinesCount", state.pipelines.size] + timeHint
+                state.pipelines.isEmpty() -> statusLabel.text = PipelineBundle["toolWindow.empty"] + timeHint
+                else -> statusLabel.text = PipelineBundle["toolWindow.pipelinesCount", state.pipelines.size] + timeHint
             }
             // The followed pipeline streams its jobs through state.stages — feed that into the
             // tree cache so the user sees live job statuses without a manual re-expand.
@@ -294,7 +294,7 @@ private class PipelinePanel(private val project: Project) {
             .maxOrNull() ?: return ""
         val pct = ((elapsed * 100) / total).coerceAtMost(99)
         val remaining = (total - elapsed).coerceAtLeast(0)
-        return MyBundle["toolWindow.etaHint", pct, formatSeconds(remaining)]
+        return PipelineBundle["toolWindow.etaHint", pct, formatSeconds(remaining)]
     }
 
     /**
@@ -388,47 +388,47 @@ private class PipelinePanel(private val project: Project) {
             is PipelineRow -> {
                 val p = data.pipeline
                 if (p.tag && !p.ref.isNullOrBlank()) {
-                    menu.add(JMenuItem(MyBundle["pipeline.menu.copyTag", p.ref], AllIcons.Actions.Copy).apply {
+                    menu.add(JMenuItem(PipelineBundle["pipeline.menu.copyTag", p.ref], AllIcons.Actions.Copy).apply {
                         addActionListener { copyTagToClipboard(p.ref!!) }
                     })
                     menu.addSeparator()
                 }
-                menu.add(JMenuItem(MyBundle["pipeline.menu.copyId", p.id]).apply {
+                menu.add(JMenuItem(PipelineBundle["pipeline.menu.copyId", p.id]).apply {
                     addActionListener { copyToClipboard("${p.id}", "ID #${p.id}") }
                 })
                 if (!p.ref.isNullOrBlank() && !p.tag) {
-                    menu.add(JMenuItem(MyBundle["pipeline.menu.copyRef", p.ref]).apply {
+                    menu.add(JMenuItem(PipelineBundle["pipeline.menu.copyRef", p.ref]).apply {
                         addActionListener { copyToClipboard(p.ref, "ref ${p.ref}") }
                     })
                 }
                 if (!p.webUrl.isNullOrBlank()) {
-                    menu.add(JMenuItem(MyBundle["pipeline.menu.copyUrl"]).apply {
+                    menu.add(JMenuItem(PipelineBundle["pipeline.menu.copyUrl"]).apply {
                         addActionListener { copyToClipboard(p.webUrl, "URL") }
                     })
                     menu.addSeparator()
-                    menu.add(JMenuItem(MyBundle["toolWindow.openInBrowser"]).apply {
+                    menu.add(JMenuItem(PipelineBundle["toolWindow.openInBrowser"]).apply {
                         addActionListener { BrowserUtil.browse(p.webUrl) }
                     })
                 }
                 menu.addSeparator()
                 if (p.status == PipelineStatus.FAILED || p.status == PipelineStatus.CANCELED) {
-                    menu.add(JMenuItem(MyBundle["pipeline.menu.retry", p.id], AllIcons.Actions.Restart).apply {
+                    menu.add(JMenuItem(PipelineBundle["pipeline.menu.retry", p.id], AllIcons.Actions.Restart).apply {
                         addActionListener { retryPipeline(p) }
                     })
                 }
                 if (!p.ref.isNullOrBlank()) {
-                    menu.add(JMenuItem(MyBundle["pipeline.menu.rerun", p.ref], AllIcons.Actions.Execute).apply {
+                    menu.add(JMenuItem(PipelineBundle["pipeline.menu.rerun", p.ref], AllIcons.Actions.Execute).apply {
                         addActionListener { rerunPipeline(p) }
                     })
                 }
                 val tagLabel = p.ref?.takeIf { p.tag && it.isNotBlank() }
                 if (tagLabel != null) {
-                    menu.add(JMenuItem(MyBundle["pipeline.menu.deleteTagOnly", tagLabel], AllIcons.Actions.GC).apply {
+                    menu.add(JMenuItem(PipelineBundle["pipeline.menu.deleteTagOnly", tagLabel], AllIcons.Actions.GC).apply {
                         addActionListener { confirmAndDeleteTag(tagLabel) }
                     })
                 }
-                val deleteLabel = if (tagLabel != null) MyBundle["pipeline.menu.deletePipelineAndTag", p.id, tagLabel]
-                                  else MyBundle["pipeline.menu.deletePipeline", p.id]
+                val deleteLabel = if (tagLabel != null) PipelineBundle["pipeline.menu.deletePipelineAndTag", p.id, tagLabel]
+                                  else PipelineBundle["pipeline.menu.deletePipeline", p.id]
                 menu.add(JMenuItem(deleteLabel, AllIcons.Actions.GC).apply {
                     addActionListener { confirmAndDelete(p) }
                 })
@@ -437,19 +437,19 @@ private class PipelinePanel(private val project: Project) {
                 val j = data.job
                 if (j.hasArtifacts) {
                     val sizeLabel = j.artifactsSize?.let { " (${humanBytes(it)})" } ?: ""
-                    menu.add(JMenuItem(MyBundle["job.menu.downloadArtifacts", sizeLabel], AllIcons.Actions.Download).apply {
+                    menu.add(JMenuItem(PipelineBundle["job.menu.downloadArtifacts", sizeLabel], AllIcons.Actions.Download).apply {
                         addActionListener { downloadArtifactsFor(j) }
                     })
                     menu.addSeparator()
                 }
-                menu.add(JMenuItem(MyBundle["job.menu.copyName", j.name]).apply {
-                    addActionListener { copyToClipboard(j.name, MyBundle["job.label.name"]) }
+                menu.add(JMenuItem(PipelineBundle["job.menu.copyName", j.name]).apply {
+                    addActionListener { copyToClipboard(j.name, PipelineBundle["job.label.name"]) }
                 })
                 if (!j.webUrl.isNullOrBlank()) {
-                    menu.add(JMenuItem(MyBundle["job.menu.copyUrl"]).apply {
-                        addActionListener { copyToClipboard(j.webUrl, MyBundle["job.label.url"]) }
+                    menu.add(JMenuItem(PipelineBundle["job.menu.copyUrl"]).apply {
+                        addActionListener { copyToClipboard(j.webUrl, PipelineBundle["job.label.url"]) }
                     })
-                    menu.add(JMenuItem(MyBundle["job.menu.openInBrowser"]).apply {
+                    menu.add(JMenuItem(PipelineBundle["job.menu.openInBrowser"]).apply {
                         addActionListener { BrowserUtil.browse(j.webUrl) }
                     })
                 }
@@ -471,9 +471,9 @@ private class PipelinePanel(private val project: Project) {
             val ok = service.createPipeline(ref)
             ApplicationManager.getApplication().invokeLater {
                 val (msg, type) = if (ok) {
-                    MyBundle["pipeline.rerun.ok", ref] to com.intellij.notification.NotificationType.INFORMATION
+                    PipelineBundle["pipeline.rerun.ok", ref] to com.intellij.notification.NotificationType.INFORMATION
                 } else {
-                    MyBundle["pipeline.rerun.fail", ref] to com.intellij.notification.NotificationType.ERROR
+                    PipelineBundle["pipeline.rerun.fail", ref] to com.intellij.notification.NotificationType.ERROR
                 }
                 com.intellij.notification.NotificationGroupManager.getInstance()
                     .getNotificationGroup("GitLab Pipeline Watcher")
@@ -493,9 +493,9 @@ private class PipelinePanel(private val project: Project) {
             val ok = service.retryPipeline(p.id)
             ApplicationManager.getApplication().invokeLater {
                 val (msg, type) = if (ok) {
-                    MyBundle["pipeline.retry.ok", p.id] to com.intellij.notification.NotificationType.INFORMATION
+                    PipelineBundle["pipeline.retry.ok", p.id] to com.intellij.notification.NotificationType.INFORMATION
                 } else {
-                    MyBundle["pipeline.retry.fail", p.id] to com.intellij.notification.NotificationType.ERROR
+                    PipelineBundle["pipeline.retry.fail", p.id] to com.intellij.notification.NotificationType.ERROR
                 }
                 com.intellij.notification.NotificationGroupManager.getInstance()
                     .getNotificationGroup("GitLab Pipeline Watcher")
@@ -510,8 +510,8 @@ private class PipelinePanel(private val project: Project) {
     private fun confirmAndDeleteTag(tagName: String) {
         val ok = com.intellij.openapi.ui.Messages.showYesNoDialog(
             project,
-            MyBundle["pipeline.deleteTag.confirmMessage", tagName],
-            MyBundle["pipeline.deleteTag.confirmTitle"],
+            PipelineBundle["pipeline.deleteTag.confirmMessage", tagName],
+            PipelineBundle["pipeline.deleteTag.confirmTitle"],
             com.intellij.openapi.ui.Messages.getWarningIcon(),
         )
         if (ok != com.intellij.openapi.ui.Messages.YES) return
@@ -519,9 +519,9 @@ private class PipelinePanel(private val project: Project) {
             val deleted = service.deleteTag(tagName)
             ApplicationManager.getApplication().invokeLater {
                 val (msg, type) = if (deleted) {
-                    MyBundle["pipeline.deleteTag.ok", tagName] to com.intellij.notification.NotificationType.INFORMATION
+                    PipelineBundle["pipeline.deleteTag.ok", tagName] to com.intellij.notification.NotificationType.INFORMATION
                 } else {
-                    MyBundle["pipeline.deleteTag.fail", tagName] to com.intellij.notification.NotificationType.ERROR
+                    PipelineBundle["pipeline.deleteTag.fail", tagName] to com.intellij.notification.NotificationType.ERROR
                 }
                 com.intellij.notification.NotificationGroupManager.getInstance()
                     .getNotificationGroup("GitLab Pipeline Watcher")
@@ -537,12 +537,12 @@ private class PipelinePanel(private val project: Project) {
      */
     private fun confirmAndDelete(p: Pipeline) {
         val tagName = p.ref?.takeIf { p.tag && it.isNotBlank() }
-        val target = if (tagName != null) MyBundle["pipeline.delete.target.withTag", p.id, tagName]
-                     else MyBundle["pipeline.delete.target.pipelineOnly", p.id]
+        val target = if (tagName != null) PipelineBundle["pipeline.delete.target.withTag", p.id, tagName]
+                     else PipelineBundle["pipeline.delete.target.pipelineOnly", p.id]
         val ok = com.intellij.openapi.ui.Messages.showYesNoDialog(
             project,
-            MyBundle["pipeline.delete.confirmMessage", target],
-            MyBundle["pipeline.delete.confirmTitle"],
+            PipelineBundle["pipeline.delete.confirmMessage", target],
+            PipelineBundle["pipeline.delete.confirmTitle"],
             com.intellij.openapi.ui.Messages.getWarningIcon(),
         )
         if (ok != com.intellij.openapi.ui.Messages.YES) return
@@ -550,12 +550,12 @@ private class PipelinePanel(private val project: Project) {
             val (pipelineOk, tagOk) = service.deletePipelineAndTag(p.id, tagName)
             ApplicationManager.getApplication().invokeLater {
                 val parts = mutableListOf<String>()
-                parts += if (pipelineOk) MyBundle["pipeline.delete.pipelineOk", p.id] else MyBundle["pipeline.delete.pipelineFail", p.id]
+                parts += if (pipelineOk) PipelineBundle["pipeline.delete.pipelineOk", p.id] else PipelineBundle["pipeline.delete.pipelineFail", p.id]
                 if (tagName != null) {
                     parts += when (tagOk) {
-                        true -> MyBundle["pipeline.deleteTag.ok", tagName]
-                        false -> MyBundle["pipeline.deleteTag.fail", tagName]
-                        null -> MyBundle["pipeline.delete.tagSkipped", tagName]
+                        true -> PipelineBundle["pipeline.deleteTag.ok", tagName]
+                        false -> PipelineBundle["pipeline.deleteTag.fail", tagName]
+                        null -> PipelineBundle["pipeline.delete.tagSkipped", tagName]
                     }
                 }
                 val anyFail = !pipelineOk || tagOk == false
@@ -579,8 +579,8 @@ private class PipelinePanel(private val project: Project) {
         if (!job.hasArtifacts) return
         val suggestedName = job.artifactsFilename ?: "artifacts-${job.id}.zip"
         val descriptor = com.intellij.openapi.fileChooser.FileSaverDescriptor(
-            MyBundle["artifacts.downloadDialog.title"],
-            MyBundle["artifacts.downloadDialog.selectLocation"],
+            PipelineBundle["artifacts.downloadDialog.title"],
+            PipelineBundle["artifacts.downloadDialog.selectLocation"],
             "zip",
         )
         val saver = com.intellij.openapi.fileChooser.FileChooserFactory.getInstance()
@@ -592,8 +592,8 @@ private class PipelinePanel(private val project: Project) {
             ApplicationManager.getApplication().invokeLater {
                 val type = if (ok) com.intellij.notification.NotificationType.INFORMATION
                            else com.intellij.notification.NotificationType.ERROR
-                val msg = if (ok) MyBundle["artifacts.downloadResult.ok", dest.absolutePath]
-                          else MyBundle["artifacts.downloadResult.fail", job.id]
+                val msg = if (ok) PipelineBundle["artifacts.downloadResult.ok", dest.absolutePath]
+                          else PipelineBundle["artifacts.downloadResult.fail", job.id]
                 com.intellij.notification.NotificationGroupManager.getInstance()
                     .getNotificationGroup("GitLab Pipeline Watcher")
                     .createNotification(msg, type)
@@ -615,7 +615,7 @@ private class PipelinePanel(private val project: Project) {
         CopyPasteManager.getInstance().setContents(StringSelection(text))
         com.intellij.notification.NotificationGroupManager.getInstance()
             .getNotificationGroup("GitLab Pipeline Watcher")
-            .createNotification(MyBundle["notification.clipboardCopied", label], com.intellij.notification.NotificationType.INFORMATION)
+            .createNotification(PipelineBundle["notification.clipboardCopied", label], com.intellij.notification.NotificationType.INFORMATION)
             .notify(project)
     }
 

@@ -1,6 +1,6 @@
 package com.github.danielalejandroamaro.gitlabpipeline.settings
 
-import com.github.danielalejandroamaro.gitlabpipeline.MyBundle
+import com.github.danielalejandroamaro.gitlabpipeline.PipelineBundle
 import com.github.danielalejandroamaro.gitlabpipeline.auth.GitLabAuthBridge
 import com.github.danielalejandroamaro.gitlabpipeline.services.GitLabPipelineService
 import com.github.danielalejandroamaro.gitlabpipeline.services.GitRemoteResolver
@@ -47,18 +47,18 @@ class PipelineSettingsConfigurable(private val project: Project) : Configurable 
     )
 
     /** Items are language tags ("" = IDE); rendered with their native name. */
-    private val languageCombo = ComboBox(MyBundle.LANGUAGES.toTypedArray()).apply {
-        renderer = com.intellij.ui.SimpleListCellRenderer.create("") { tag ->
-            when (tag) {
+    private val languageCombo = ComboBox(PipelineBundle.LANGUAGES.toTypedArray()).apply {
+        renderer = com.intellij.ui.SimpleListCellRenderer.create { label, tag, _ ->
+            label.text = when (tag) {
                 "en" -> "English"
                 "es" -> "Español"
                 "zh-CN" -> "简体中文"
-                else -> MyBundle["settings.languageAuto"]
+                else -> PipelineBundle["settings.languageAuto"]
             }
         }
     }
 
-    private val idlePollingCheckbox = JBCheckBox(MyBundle["settings.idlePollingEnabled"])
+    private val idlePollingCheckbox = JBCheckBox(PipelineBundle["settings.idlePollingEnabled"])
 
     private val accountsDiagnosticArea = JTextArea("").apply {
         isEditable = false
@@ -71,37 +71,37 @@ class PipelineSettingsConfigurable(private val project: Project) : Configurable 
         preferredSize = Dimension(0, JBUI.scale(120))
     }
 
-    private val refreshAccountsButton = JButton(MyBundle["settings.refreshAccounts"]).apply {
+    private val refreshAccountsButton = JButton(PipelineBundle["settings.refreshAccounts"]).apply {
         addActionListener { reloadAccountsDiagnostic() }
     }
 
     private var panel: JPanel? = null
 
-    override fun getDisplayName(): String = MyBundle["settings.displayName"]
+    override fun getDisplayName(): String = PipelineBundle["settings.displayName"]
 
     override fun createComponent(): JComponent {
-        val description = JBLabel("<html>${MyBundle["settings.idlePollingHint"]}</html>").apply {
+        val description = JBLabel("<html>${PipelineBundle["settings.idlePollingHint"]}</html>").apply {
             border = JBUI.Borders.emptyTop(4)
         }
-        val accountsHeader = JBLabel("<html><b>${MyBundle["settings.accountsHeader"]}</b></html>").apply {
+        val accountsHeader = JBLabel("<html><b>${PipelineBundle["settings.accountsHeader"]}</b></html>").apply {
             border = JBUI.Borders.emptyTop(12)
         }
-        val accountsHint = JBLabel("<html>${MyBundle["settings.accountsHint"]}</html>").apply {
+        val accountsHint = JBLabel("<html>${PipelineBundle["settings.accountsHint"]}</html>").apply {
             border = JBUI.Borders.emptyTop(4)
         }
-        val remoteHint = JBLabel("<html>${MyBundle["settings.remoteHint"]}</html>").apply {
+        val remoteHint = JBLabel("<html>${PipelineBundle["settings.remoteHint"]}</html>").apply {
             border = JBUI.Borders.emptyTop(4)
         }
-        val languageHint = JBLabel("<html>${MyBundle["settings.languageHint"]}</html>").apply {
+        val languageHint = JBLabel("<html>${PipelineBundle["settings.languageHint"]}</html>").apply {
             border = JBUI.Borders.emptyTop(4)
         }
         val builder = FormBuilder.createFormBuilder()
-            .addLabeledComponent(MyBundle["settings.languageLabel"], languageCombo, 1, false)
+            .addLabeledComponent(PipelineBundle["settings.languageLabel"], languageCombo, 1, false)
             .addComponent(languageHint)
-            .addLabeledComponent(MyBundle["settings.refreshInterval"], intervalSpinner, 12, false)
+            .addLabeledComponent(PipelineBundle["settings.refreshInterval"], intervalSpinner, 12, false)
             .addComponent(idlePollingCheckbox, 1)
             .addComponent(description)
-            .addLabeledComponent(MyBundle["settings.remoteLabel"], remoteCombo, 12, false)
+            .addLabeledComponent(PipelineBundle["settings.remoteLabel"], remoteCombo, 12, false)
             .addComponent(remoteHint)
             .addComponent(accountsHeader)
             .addComponent(refreshAccountsButton)
@@ -117,7 +117,7 @@ class PipelineSettingsConfigurable(private val project: Project) : Configurable 
 
     /** Selected remote URL, or null when "auto" is chosen. */
     private fun selectedRemoteUrl(): String? =
-        (remoteCombo.selectedItem as? String)?.takeIf { it != MyBundle["settings.remoteAuto"] }
+        (remoteCombo.selectedItem as? String)?.takeIf { it != PipelineBundle["settings.remoteAuto"] }
 
     override fun isModified(): Boolean {
         val s = settings.state
@@ -145,13 +145,13 @@ class PipelineSettingsConfigurable(private val project: Project) : Configurable 
         val s = settings.state
         intervalSpinner.value = s.refreshIntervalSeconds
         idlePollingCheckbox.isSelected = s.idlePollingEnabled
-        languageCombo.selectedItem = s.language.takeIf { it in MyBundle.LANGUAGES } ?: ""
+        languageCombo.selectedItem = s.language.takeIf { it in PipelineBundle.LANGUAGES } ?: ""
         reloadRemoteCombo()
     }
 
     /** Repuebla el combo con auto + los remotes GitLab del proyecto y selecciona el vigente. */
     private fun reloadRemoteCombo() {
-        val auto = MyBundle["settings.remoteAuto"]
+        val auto = PipelineBundle["settings.remoteAuto"]
         remoteCombo.removeAllItems()
         remoteCombo.addItem(auto)
         GitRemoteResolver.candidates(project).forEach { remoteCombo.addItem(it.url) }
@@ -175,13 +175,13 @@ class PipelineSettingsConfigurable(private val project: Project) : Configurable 
     private fun reloadAccountsDiagnostic() {
         val accounts = GitLabAuthBridge.accounts()
         val sb = StringBuilder()
-        sb.append(MyBundle["settings.diag.serviceClassResolved"]).append(' ')
-            .append(GitLabAuthBridge.lastResolvedManagerClass ?: MyBundle["settings.diag.notResolved"])
+        sb.append(PipelineBundle["settings.diag.serviceClassResolved"]).append(' ')
+            .append(GitLabAuthBridge.lastResolvedManagerClass ?: PipelineBundle["settings.diag.notResolved"])
             .append('\n')
         GitLabAuthBridge.lastResolutionError?.let {
-            sb.append(MyBundle["settings.diag.lastError"]).append(' ').append(it).append('\n')
+            sb.append(PipelineBundle["settings.diag.lastError"]).append(' ').append(it).append('\n')
         }
-        sb.append(MyBundle["settings.diag.accountsDetected"]).append(' ').append(accounts.size).append('\n')
+        sb.append(PipelineBundle["settings.diag.accountsDetected"]).append(' ').append(accounts.size).append('\n')
         accounts.forEach { acc ->
             sb.append("  - ").append(acc.name).append(" @ ").append(acc.serverUrl).append('\n')
         }

@@ -27,7 +27,7 @@ class PipelineSettings : PersistentStateComponent<PipelineSettings.State> {
          * is in progress (it only shuts off when work settles).
          */
         var idlePollingEnabled: Boolean = true,
-        /** UI language tag from [com.github.danielalejandroamaro.gitlabpipeline.MyBundle.LANGUAGES]; "" = follow the IDE. */
+        /** UI language tag from [com.github.danielalejandroamaro.gitlabpipeline.PipelineBundle.LANGUAGES]; "" = follow the IDE. */
         var language: String = "",
     )
 

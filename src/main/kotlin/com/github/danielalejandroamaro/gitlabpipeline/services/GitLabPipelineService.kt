@@ -1,6 +1,6 @@
 package com.github.danielalejandroamaro.gitlabpipeline.services
 
-import com.github.danielalejandroamaro.gitlabpipeline.MyBundle
+import com.github.danielalejandroamaro.gitlabpipeline.PipelineBundle
 import com.github.danielalejandroamaro.gitlabpipeline.api.GitLabApiClient
 import com.github.danielalejandroamaro.gitlabpipeline.auth.GitLabAuthBridge
 import com.github.danielalejandroamaro.gitlabpipeline.model.GitLabPackage
@@ -446,7 +446,7 @@ class GitLabPipelineService(
      * "Diagnosticar ahora" button in the Logs tab.
      */
     fun runDiagnostics() {
-        eventLog.info(MyBundle["diagnostics.start"])
+        eventLog.info(PipelineBundle["diagnostics.start"])
         eventLog.info("ciEnabled = ${_state.value.ciEnabled}")
         val remote = GitRemoteResolver.resolve(project)
         if (remote == null) {
@@ -486,7 +486,7 @@ class GitLabPipelineService(
             return
         }
         eventLog.info("listPipelines OK: ${pipelines.size} pipelines")
-        eventLog.info(MyBundle["diagnostics.end"])
+        eventLog.info(PipelineBundle["diagnostics.end"])
     }
 
     /**
@@ -515,7 +515,7 @@ class GitLabPipelineService(
                 val versionLabel = p.ref ?: p.sha?.take(8) ?: "?"
                 val source = p.source ?: "push"
                 notify(
-                    MyBundle["notification.pipelineDetected", p.id.toString(), source, versionLabel],
+                    PipelineBundle["notification.pipelineDetected", p.id.toString(), source, versionLabel],
                     NotificationType.INFORMATION,
                 )
                 eventLog.info("Pipeline #${p.id} detected ($source / $versionLabel, status=${p.status.raw})")
@@ -526,7 +526,7 @@ class GitLabPipelineService(
                 if (wasAlreadyTerminal) continue
                 val durationLabel = p.duration?.let { "${it}s" } ?: "?"
                 notify(
-                    MyBundle["notification.pipelineTerminal", p.id.toString(), p.status.raw, durationLabel],
+                    PipelineBundle["notification.pipelineTerminal", p.id.toString(), p.status.raw, durationLabel],
                     if (p.status == PipelineStatus.SUCCESS) NotificationType.INFORMATION
                     else NotificationType.ERROR,
                 )
@@ -577,7 +577,7 @@ class GitLabPipelineService(
             val tagName = started.ref ?: "(unknown)"
             _state.value = _state.value.copy(following = started, followingTag = tagName)
             notify(
-                MyBundle["notification.pipelineStarted", started.id.toString(), tagName],
+                PipelineBundle["notification.pipelineStarted", started.id.toString(), tagName],
                 NotificationType.INFORMATION,
             )
             popToolWindow()
@@ -625,13 +625,13 @@ class GitLabPipelineService(
                 delay(sleep)
             }
             if (pipeline == null) {
-                notify(MyBundle["notification.pipelineNotFound", tagName], NotificationType.WARNING)
+                notify(PipelineBundle["notification.pipelineNotFound", tagName], NotificationType.WARNING)
                 return@launch
             }
 
             _state.value = _state.value.copy(following = pipeline, followingTag = tagName)
             notify(
-                MyBundle["notification.pipelineStarted", pipeline!!.id.toString(), tagName],
+                PipelineBundle["notification.pipelineStarted", pipeline!!.id.toString(), tagName],
                 NotificationType.INFORMATION,
             )
             popToolWindow()
@@ -679,7 +679,7 @@ class GitLabPipelineService(
 
                 val durationLabel = updated.duration?.let { "${it}s" } ?: "?"
                 val breakdown = formatStageBreakdown(finalStages)
-                val baseMsg = MyBundle["notification.pipelineFinished", updated.id.toString(), updated.status.raw, durationLabel]
+                val baseMsg = PipelineBundle["notification.pipelineFinished", updated.id.toString(), updated.status.raw, durationLabel]
                 val fullMsg = if (breakdown.isBlank()) baseMsg else "$baseMsg\n$breakdown"
                 notify(
                     fullMsg,
