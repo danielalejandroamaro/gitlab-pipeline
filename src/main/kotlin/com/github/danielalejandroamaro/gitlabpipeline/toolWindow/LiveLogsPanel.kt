@@ -1,5 +1,6 @@
 package com.github.danielalejandroamaro.gitlabpipeline.toolWindow
 
+import com.github.danielalejandroamaro.gitlabpipeline.MyBundle
 import com.github.danielalejandroamaro.gitlabpipeline.model.Job as PipelineJob
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
 import com.github.danielalejandroamaro.gitlabpipeline.services.GitLabPipelineService
@@ -80,7 +81,7 @@ internal class LiveLogsPanel(
         root.isVisible = true
         if (running.id != currentJobId) {
             currentJobId = running.id
-            title.text = "Runner log — ${running.stage} → ${running.name} (#${running.id})"
+            title.text = MyBundle["liveLogs.title", running.stage, running.name, running.id]
             area.text = "(cargando log…)"
             startPolling()
             fetchTraceAsync()

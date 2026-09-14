@@ -46,6 +46,18 @@ class PipelineSettingsConfigurable(private val project: Project) : Configurable 
         ),
     )
 
+    /** Items are language tags ("" = IDE); rendered with their native name. */
+    private val languageCombo = ComboBox(MyBundle.LANGUAGES.toTypedArray()).apply {
+        renderer = com.intellij.ui.SimpleListCellRenderer.create("") { tag ->
+            when (tag) {
+                "en" -> "English"
+                "es" -> "Español"
+                "zh-CN" -> "简体中文"
+                else -> MyBundle["settings.languageAuto"]
+            }
+        }
+    }
+
     private val idlePollingCheckbox = JBCheckBox(MyBundle["settings.idlePollingEnabled"])
 
     private val accountsDiagnosticArea = JTextArea("").apply {
@@ -80,8 +92,13 @@ class PipelineSettingsConfigurable(private val project: Project) : Configurable 
         val remoteHint = JBLabel("<html>${MyBundle["settings.remoteHint"]}</html>").apply {
             border = JBUI.Borders.emptyTop(4)
         }
+        val languageHint = JBLabel("<html>${MyBundle["settings.languageHint"]}</html>").apply {
+            border = JBUI.Borders.emptyTop(4)
+        }
         val builder = FormBuilder.createFormBuilder()
-            .addLabeledComponent(MyBundle["settings.refreshInterval"], intervalSpinner, 1, false)
+            .addLabeledComponent(MyBundle["settings.languageLabel"], languageCombo, 1, false)
+            .addComponent(languageHint)
+            .addLabeledComponent(MyBundle["settings.refreshInterval"], intervalSpinner, 12, false)
             .addComponent(idlePollingCheckbox, 1)
             .addComponent(description)
             .addLabeledComponent(MyBundle["settings.remoteLabel"], remoteCombo, 12, false)
@@ -106,6 +123,7 @@ class PipelineSettingsConfigurable(private val project: Project) : Configurable 
         val s = settings.state
         return intervalSpinner.value != s.refreshIntervalSeconds ||
             idlePollingCheckbox.isSelected != s.idlePollingEnabled ||
+            languageCombo.selectedItem != s.language ||
             selectedRemoteUrl() != projectSettings.preferredRemoteUrl
     }
 
@@ -113,6 +131,7 @@ class PipelineSettingsConfigurable(private val project: Project) : Configurable 
         settings.update(
             intervalSeconds = (intervalSpinner.value as Number).toInt(),
             idlePollingEnabled = idlePollingCheckbox.isSelected,
+            language = languageCombo.selectedItem as String,
         )
         val remoteChanged = selectedRemoteUrl() != projectSettings.preferredRemoteUrl
         projectSettings.preferredRemoteUrl = selectedRemoteUrl()
@@ -126,6 +145,7 @@ class PipelineSettingsConfigurable(private val project: Project) : Configurable 
         val s = settings.state
         intervalSpinner.value = s.refreshIntervalSeconds
         idlePollingCheckbox.isSelected = s.idlePollingEnabled
+        languageCombo.selectedItem = s.language.takeIf { it in MyBundle.LANGUAGES } ?: ""
         reloadRemoteCombo()
     }
 

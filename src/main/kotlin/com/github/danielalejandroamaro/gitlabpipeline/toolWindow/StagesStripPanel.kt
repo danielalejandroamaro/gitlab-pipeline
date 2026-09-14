@@ -1,5 +1,6 @@
 package com.github.danielalejandroamaro.gitlabpipeline.toolWindow
 
+import com.github.danielalejandroamaro.gitlabpipeline.MyBundle
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
 import com.github.danielalejandroamaro.gitlabpipeline.model.StageSummary
 import com.github.danielalejandroamaro.gitlabpipeline.ui.ColoredDotIcon
@@ -95,7 +96,7 @@ private class StageChip(stage: StageSummary, isCurrent: Boolean) : JPanel(FlowLa
         )
         add(JBLabel(iconFor(stage.status)))
         val countLabel = "${stage.succeededJobs}/${stage.totalJobs}"
-        val nameSuffix = if (isCurrent) " (en curso)" else ""
+        val nameSuffix = if (isCurrent) " " + MyBundle["stages.current"] else ""
         add(JBLabel("${stage.name} ($countLabel)$nameSuffix"))
     }
 

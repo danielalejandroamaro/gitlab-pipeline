@@ -27,6 +27,8 @@ class PipelineSettings : PersistentStateComponent<PipelineSettings.State> {
          * is in progress (it only shuts off when work settles).
          */
         var idlePollingEnabled: Boolean = true,
+        /** UI language tag from [com.github.danielalejandroamaro.gitlabpipeline.MyBundle.LANGUAGES]; "" = follow the IDE. */
+        var language: String = "",
     )
 
     private var state = State()
@@ -43,9 +45,10 @@ class PipelineSettings : PersistentStateComponent<PipelineSettings.State> {
 
     val idlePollingEnabled: Boolean get() = state.idlePollingEnabled
 
-    fun update(intervalSeconds: Int, idlePollingEnabled: Boolean) {
+    fun update(intervalSeconds: Int, idlePollingEnabled: Boolean, language: String) {
         state.refreshIntervalSeconds = intervalSeconds.coerceIn(MIN_INTERVAL_SECONDS, MAX_INTERVAL_SECONDS)
         state.idlePollingEnabled = idlePollingEnabled
+        state.language = language
     }
 
     companion object {

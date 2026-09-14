@@ -58,10 +58,10 @@ class PipelineToolWindowFactory : ToolWindowFactory {
         val packagesPanel = PackagesTabPanel(project)
         val eventLogPanel = EventLogTabPanel(project)
         val cf = ContentFactory.getInstance()
-        toolWindow.contentManager.addContent(cf.createContent(pipelinesPanel.root, "Pipelines", false))
-        toolWindow.contentManager.addContent(cf.createContent(releasesPanel.root, "Releases", false))
-        toolWindow.contentManager.addContent(cf.createContent(packagesPanel.root, "Packages", false))
-        toolWindow.contentManager.addContent(cf.createContent(eventLogPanel.root, "Logs", false))
+        toolWindow.contentManager.addContent(cf.createContent(pipelinesPanel.root, MyBundle["toolWindow.tab.pipelines"], false))
+        toolWindow.contentManager.addContent(cf.createContent(releasesPanel.root, MyBundle["toolWindow.tab.releases"], false))
+        toolWindow.contentManager.addContent(cf.createContent(packagesPanel.root, MyBundle["toolWindow.tab.packages"], false))
+        toolWindow.contentManager.addContent(cf.createContent(eventLogPanel.root, MyBundle["toolWindow.tab.logs"], false))
     }
 }
 

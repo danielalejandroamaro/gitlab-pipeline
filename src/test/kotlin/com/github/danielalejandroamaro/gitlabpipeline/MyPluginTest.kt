@@ -4,6 +4,7 @@ import com.github.danielalejandroamaro.gitlabpipeline.auth.GitLabAuthBridge
 import com.github.danielalejandroamaro.gitlabpipeline.model.Job
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
 import com.github.danielalejandroamaro.gitlabpipeline.model.StageSummary
+import com.github.danielalejandroamaro.gitlabpipeline.settings.PipelineSettings
 import com.github.danielalejandroamaro.gitlabpipeline.toolWindow.StagesStripPanel
 import com.github.danielalejandroamaro.gitlabpipeline.toolWindow.computeMixedAmber
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
@@ -59,6 +60,37 @@ class MyPluginTest : BasePlatformTestCase() {
             strip.doLayout()
             val bottom = strip.components.maxOf { it.y + it.height }
             assertTrue("w=$w clipped: bottom=$bottom h=${strip.height}", bottom <= strip.height)
+        }
+    }
+
+    fun testBundlesSameKeysAndPlaceholders() {
+        val placeholders = Regex("""\{\d+}""")
+        val base = MyBundle.bundleFor("en")
+        for (tag in listOf("es", "zh-CN")) {
+            val b = MyBundle.bundleFor(tag)
+            assertFalse("$tag fell back to base", b.locale.toString().isEmpty())
+            assertEquals("$tag keys", base.keySet(), b.keySet())
+            for (k in base.keySet()) {
+                assertEquals("$tag $k placeholders",
+                    placeholders.findAll(base.getString(k)).map { it.value }.toSet(),
+                    placeholders.findAll(b.getString(k)).map { it.value }.toSet())
+            }
+        }
+    }
+
+    fun testLanguageOverrideAndRawIds() {
+        val s = PipelineSettings.getInstance().state
+        val old = s.language
+        try {
+            s.language = "es"
+            assertEquals("Abrir", MyBundle["releases.downloadResult.open"])
+            assertEquals("Reintentar pipeline #27223", MyBundle["pipeline.menu.retry", 27223L])
+            s.language = "zh-CN"
+            assertEquals("打开", MyBundle["releases.downloadResult.open"])
+            s.language = "en"
+            assertEquals("Open", MyBundle["releases.downloadResult.open"])
+        } finally {
+            s.language = old
         }
     }
 

@@ -111,7 +111,7 @@ class PipelineStatusBarWidget(
         val sha = p.sha?.take(8) ?: "?"
         val stageLine = currentStage?.let { "\n${MyBundle["statusBar.currentStage"]} $it" } ?: ""
         val breakdown = if (stagesSummary.isNotBlank()) "\nstages: $stagesSummary" else ""
-        return "GitLab pipeline #${p.id} — ${p.status.raw}\nref: $ref · sha: $sha$stageLine$breakdown\n(click to open in browser)"
+        return "GitLab pipeline #${p.id} — ${p.status.raw}\nref: $ref · sha: $sha$stageLine$breakdown\n" + MyBundle["statusBar.clickToOpen"]
     }
 
     override fun getIcon(): Icon? {
