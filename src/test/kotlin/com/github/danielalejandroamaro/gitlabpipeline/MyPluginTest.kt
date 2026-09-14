@@ -3,6 +3,8 @@ package com.github.danielalejandroamaro.gitlabpipeline
 import com.github.danielalejandroamaro.gitlabpipeline.auth.GitLabAuthBridge
 import com.github.danielalejandroamaro.gitlabpipeline.model.Job
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
+import com.github.danielalejandroamaro.gitlabpipeline.model.StageSummary
+import com.github.danielalejandroamaro.gitlabpipeline.toolWindow.StagesStripPanel
 import com.github.danielalejandroamaro.gitlabpipeline.toolWindow.computeMixedAmber
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
@@ -44,6 +46,20 @@ class MyPluginTest : BasePlatformTestCase() {
 
         // single stage → never amber.
         assertFalse(computeMixedAmber(listOf(build)))
+    }
+
+    fun testStagesStripWrapNeverClips() {
+        val stages = listOf("release", "build", "test", "deploy", "cleanup").map {
+            StageSummary(it, PipelineStatus.RUNNING, listOf(job(it, it, PipelineStatus.RUNNING, null, null)))
+        }
+        val strip = StagesStripPanel().apply { update(stages, "release") }
+        for (w in 80..700 step 7) {
+            strip.setSize(w, 10)
+            strip.setSize(w, strip.preferredSize.height)
+            strip.doLayout()
+            val bottom = strip.components.maxOf { it.y + it.height }
+            assertTrue("w=$w clipped: bottom=$bottom h=${strip.height}", bottom <= strip.height)
+        }
     }
 
     private fun job(

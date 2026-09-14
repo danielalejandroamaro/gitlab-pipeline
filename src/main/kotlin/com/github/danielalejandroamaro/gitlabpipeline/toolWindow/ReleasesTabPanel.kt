@@ -315,10 +315,18 @@ class ReleasesTabPanel(private val project: Project) {
                 val type = if (ok) NotificationType.INFORMATION else NotificationType.ERROR
                 val msg = if (ok) MyBundle["releases.downloadResult.ok", dest.absolutePath]
                           else MyBundle["releases.downloadResult.fail", asset.name]
-                NotificationGroupManager.getInstance()
+                val notification = NotificationGroupManager.getInstance()
                     .getNotificationGroup("GitLab Pipeline Watcher")
                     .createNotification(msg, type)
-                    .notify(project)
+                if (ok) {
+                    notification.addAction(com.intellij.notification.NotificationAction.createSimpleExpiring(MyBundle["releases.downloadResult.open"]) {
+                        ApplicationManager.getApplication().executeOnPooledThread { java.awt.Desktop.getDesktop().open(dest) }
+                    })
+                    notification.addAction(com.intellij.notification.NotificationAction.createSimple(
+                        com.intellij.ide.actions.RevealFileAction.getActionName(),
+                    ) { com.intellij.ide.actions.RevealFileAction.openFile(dest) })
+                }
+                notification.notify(project)
             }
         }
     }
