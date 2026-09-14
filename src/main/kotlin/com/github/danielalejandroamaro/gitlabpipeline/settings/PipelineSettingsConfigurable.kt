@@ -155,13 +155,13 @@ class PipelineSettingsConfigurable(private val project: Project) : Configurable 
     private fun reloadAccountsDiagnostic() {
         val accounts = GitLabAuthBridge.accounts()
         val sb = StringBuilder()
-        sb.append("Service class resuelto: ")
-            .append(GitLabAuthBridge.lastResolvedManagerClass ?: "(no resuelto)")
+        sb.append(MyBundle["settings.diag.serviceClassResolved"]).append(' ')
+            .append(GitLabAuthBridge.lastResolvedManagerClass ?: MyBundle["settings.diag.notResolved"])
             .append('\n')
         GitLabAuthBridge.lastResolutionError?.let {
-            sb.append("Último error: ").append(it).append('\n')
+            sb.append(MyBundle["settings.diag.lastError"]).append(' ').append(it).append('\n')
         }
-        sb.append("Cuentas detectadas: ").append(accounts.size).append('\n')
+        sb.append(MyBundle["settings.diag.accountsDetected"]).append(' ').append(accounts.size).append('\n')
         accounts.forEach { acc ->
             sb.append("  - ").append(acc.name).append(" @ ").append(acc.serverUrl).append('\n')
         }

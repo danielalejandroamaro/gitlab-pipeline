@@ -446,7 +446,7 @@ class GitLabPipelineService(
      * "Diagnosticar ahora" button in the Logs tab.
      */
     fun runDiagnostics() {
-        eventLog.info("=== Diagnóstico ===")
+        eventLog.info(MyBundle["diagnostics.start"])
         eventLog.info("ciEnabled = ${_state.value.ciEnabled}")
         val remote = GitRemoteResolver.resolve(project)
         if (remote == null) {
@@ -486,7 +486,7 @@ class GitLabPipelineService(
             return
         }
         eventLog.info("listPipelines OK: ${pipelines.size} pipelines")
-        eventLog.info("=== Fin del diagnóstico ===")
+        eventLog.info(MyBundle["diagnostics.end"])
     }
 
     /**

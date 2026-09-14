@@ -1,5 +1,6 @@
 package com.github.danielalejandroamaro.gitlabpipeline.toolWindow
 
+import com.github.danielalejandroamaro.gitlabpipeline.MyBundle
 import com.github.danielalejandroamaro.gitlabpipeline.model.Release
 import com.github.danielalejandroamaro.gitlabpipeline.model.ReleaseAsset
 import com.github.danielalejandroamaro.gitlabpipeline.model.ReleaseAssetKind
@@ -101,7 +102,7 @@ class ReleasesTabPanel(private val project: Project) {
         border = BorderFactory.createEmptyBorder(4, 8, 4, 8)
     }
 
-    private val refreshButton = JButton("Refresh").apply {
+    private val refreshButton = JButton(MyBundle["toolWindow.refresh"]).apply {
         addActionListener { service.refresh() }
     }
 
@@ -129,16 +130,16 @@ class ReleasesTabPanel(private val project: Project) {
         refreshButton.isEnabled = !state.isRefreshing
         when {
             !state.ciEnabled -> {
-                statusLabel.text = "Sin .gitlab-ci.yml"
+                statusLabel.text = MyBundle["toolWindow.noCi"]
                 rebuild(emptyList())
             }
             state.errorMessage != null -> statusLabel.text = state.errorMessage
             state.releases.isEmpty() -> {
-                statusLabel.text = if (state.lastRefreshedAt == 0L) "Cargando releases…" else "(sin releases)"
+                statusLabel.text = if (state.lastRefreshedAt == 0L) MyBundle["toolWindow.loadingReleases"] else MyBundle["toolWindow.noReleases"]
                 rebuild(emptyList())
             }
             else -> {
-                statusLabel.text = "${state.releases.size} releases"
+                statusLabel.text = MyBundle["toolWindow.releasesCount", state.releases.size]
                 rebuild(state.releases)
             }
         }
@@ -219,16 +220,16 @@ class ReleasesTabPanel(private val project: Project) {
             is AssetRow -> {
                 val a = data.asset
                 if (a.kind == ReleaseAssetKind.PACKAGE && a.downloadUrl.isNotBlank()) {
-                    menu.add(JMenuItem("Descargar ${a.name}", AllIcons.Actions.Download).apply {
+                    menu.add(JMenuItem(MyBundle["releases.menu.download", a.name], AllIcons.Actions.Download).apply {
                         addActionListener { downloadAsset(a) }
                     })
                     menu.addSeparator()
                 }
                 if (a.url.isNotBlank()) {
-                    menu.add(JMenuItem("Abrir en navegador").apply {
+                    menu.add(JMenuItem(MyBundle["toolWindow.openInBrowser"]).apply {
                         addActionListener { BrowserUtil.browse(a.url) }
                     })
-                    menu.add(JMenuItem("Copiar URL").apply {
+                    menu.add(JMenuItem(MyBundle["releases.menu.copyUrl"]).apply {
                         addActionListener {
                             CopyPasteManager.getInstance().setContents(StringSelection(a.url))
                         }
@@ -237,20 +238,20 @@ class ReleasesTabPanel(private val project: Project) {
             }
             is ReleaseHeaderRow -> {
                 releaseWebUrl(data.release)?.let { url ->
-                    menu.add(JMenuItem("Abrir release en navegador").apply {
+                    menu.add(JMenuItem(MyBundle["releases.menu.openReleaseInBrowser"]).apply {
                         addActionListener { BrowserUtil.browse(url) }
                     })
                 }
-                menu.add(JMenuItem("Copiar tag: ${data.release.tagName}").apply {
+                menu.add(JMenuItem(MyBundle["releases.menu.copyTag", data.release.tagName]).apply {
                     addActionListener {
                         CopyPasteManager.getInstance().setContents(StringSelection(data.release.tagName))
                     }
                 })
                 menu.addSeparator()
-                menu.add(JMenuItem("Borrar release ${data.release.tagName}", AllIcons.Actions.GC).apply {
+                menu.add(JMenuItem(MyBundle["releases.menu.deleteRelease", data.release.tagName], AllIcons.Actions.GC).apply {
                     addActionListener { confirmAndDeleteRelease(data.release, alsoTag = false) }
                 })
-                menu.add(JMenuItem("Borrar release ${data.release.tagName} + tag", AllIcons.Actions.GC).apply {
+                menu.add(JMenuItem(MyBundle["releases.menu.deleteReleaseAndTag", data.release.tagName], AllIcons.Actions.GC).apply {
                     addActionListener { confirmAndDeleteRelease(data.release, alsoTag = true) }
                 })
             }
@@ -266,15 +267,12 @@ class ReleasesTabPanel(private val project: Project) {
      * Dno wants reclaiming that storage too, extend the service to enumerate+delete packages.
      */
     private fun confirmAndDeleteRelease(release: Release, alsoTag: Boolean) {
-        val target = if (alsoTag) "el release ${release.tagName} y el tag ${release.tagName}"
-                     else "el release ${release.tagName}"
+        val target = if (alsoTag) MyBundle["releases.confirmDelete.target.withTag", release.tagName]
+                     else MyBundle["releases.confirmDelete.target.releaseOnly", release.tagName]
         val ok = com.intellij.openapi.ui.Messages.showYesNoDialog(
             project,
-            "Vas a borrar $target en GitLab.\n" +
-                "Nota: los packages binarios (Generic Packages) NO se borran con esto; viven en el " +
-                "Package Registry y se purgan aparte.\n\n" +
-                "¿Continuar?",
-            "Borrar release",
+            MyBundle["releases.confirmDelete.message", target],
+            MyBundle["releases.confirmDelete.title"],
             com.intellij.openapi.ui.Messages.getWarningIcon(),
         )
         if (ok != com.intellij.openapi.ui.Messages.YES) return
@@ -282,13 +280,13 @@ class ReleasesTabPanel(private val project: Project) {
             val (releaseOk, tagOk) = service.deleteReleaseAndTag(release.tagName, alsoTag)
             ApplicationManager.getApplication().invokeLater {
                 val parts = mutableListOf<String>()
-                parts += if (releaseOk) "release ${release.tagName} borrado"
-                         else "no se pudo borrar release ${release.tagName}"
+                parts += if (releaseOk) MyBundle["releases.deleteResult.releaseOk", release.tagName]
+                         else MyBundle["releases.deleteResult.releaseFail", release.tagName]
                 if (alsoTag) {
                     parts += when (tagOk) {
-                        true -> "tag ${release.tagName} borrado"
-                        false -> "no se pudo borrar tag ${release.tagName}"
-                        null -> "tag ${release.tagName} no intentado"
+                        true -> MyBundle["releases.deleteResult.tagOk", release.tagName]
+                        false -> MyBundle["releases.deleteResult.tagFail", release.tagName]
+                        null -> MyBundle["releases.deleteResult.tagSkipped", release.tagName]
                     }
                 }
                 val anyFail = !releaseOk || tagOk == false
@@ -305,7 +303,7 @@ class ReleasesTabPanel(private val project: Project) {
     private fun downloadAsset(asset: ReleaseAsset) {
         val suggestedName = asset.downloadUrl.substringAfterLast('/').ifBlank { "${asset.name}.bin" }
         val descriptor = com.intellij.openapi.fileChooser.FileSaverDescriptor(
-            "Descargar package", "Selecciona dónde guardar el archivo", "",
+            MyBundle["releases.downloadDialog.title"], MyBundle["releases.downloadDialog.selectLocation"], "",
         )
         val saver = com.intellij.openapi.fileChooser.FileChooserFactory.getInstance()
             .createSaveFileDialog(descriptor, project)
@@ -315,8 +313,8 @@ class ReleasesTabPanel(private val project: Project) {
             val ok = service.downloadFromUrl(asset.downloadUrl, dest)
             ApplicationManager.getApplication().invokeLater {
                 val type = if (ok) NotificationType.INFORMATION else NotificationType.ERROR
-                val msg = if (ok) "Descargado en ${dest.absolutePath}"
-                          else "No se pudo descargar ${asset.name}"
+                val msg = if (ok) MyBundle["releases.downloadResult.ok", dest.absolutePath]
+                          else MyBundle["releases.downloadResult.fail", asset.name]
                 NotificationGroupManager.getInstance()
                     .getNotificationGroup("GitLab Pipeline Watcher")
                     .createNotification(msg, type)
@@ -378,7 +376,7 @@ private class ReleasesTreeRenderer : ColoredTreeCellRenderer() {
                 data.release.releasedAt?.let {
                     append("  ${it.take(10)}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 }
-                toolTipText = "Doble click abre el release en navegador"
+                toolTipText = MyBundle["releases.tooltip.release"]
             }
             is AssetGroupRow -> {
                 icon = groupIcon(data.kind)
@@ -390,7 +388,7 @@ private class ReleasesTreeRenderer : ColoredTreeCellRenderer() {
                 append(data.asset.name, SimpleTextAttributes.REGULAR_ATTRIBUTES)
                 if (data.asset.kind == ReleaseAssetKind.PACKAGE && data.asset.downloadUrl.isNotBlank()) {
                     paintDownloadIcon = true
-                    toolTipText = "Click en el icono ⬇ para descargar; doble click abre en navegador"
+                    toolTipText = MyBundle["releases.tooltip.asset"]
                 } else {
                     toolTipText = data.asset.url.ifBlank { null }
                 }

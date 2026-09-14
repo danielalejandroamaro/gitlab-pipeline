@@ -1,5 +1,6 @@
 package com.github.danielalejandroamaro.gitlabpipeline.toolWindow
 
+import com.github.danielalejandroamaro.gitlabpipeline.MyBundle
 import com.github.danielalejandroamaro.gitlabpipeline.services.GitLabPipelineService
 import com.github.danielalejandroamaro.gitlabpipeline.services.PipelineEventLog
 import com.intellij.openapi.application.ApplicationManager
@@ -54,7 +55,7 @@ class EventLogTabPanel(private val project: Project) {
 
     private val scrollPane = JBScrollPane(area)
 
-    private val diagnoseButton = JButton("Diagnosticar ahora").apply {
+    private val diagnoseButton = JButton(MyBundle["eventLog.diagnoseButton"]).apply {
         addActionListener {
             // Run off the EDT — the diagnostic chain hits the network (resolveProjectId,
             // listPipelines). The log writes themselves are thread-safe (StateFlow).
@@ -62,13 +63,13 @@ class EventLogTabPanel(private val project: Project) {
         }
     }
 
-    private val copyButton = JButton("Copiar todo").apply {
+    private val copyButton = JButton(MyBundle["eventLog.copyAllButton"]).apply {
         addActionListener {
             CopyPasteManager.getInstance().setContents(StringSelection(area.text))
         }
     }
 
-    private val clearButton = JButton("Limpiar").apply {
+    private val clearButton = JButton(MyBundle["eventLog.clearButton"]).apply {
         addActionListener { eventLog.clear() }
     }
 
