@@ -9,7 +9,7 @@
 
 ## [Unreleased]
 
-<!-- v0.1.2 (pendiente de promoción) -->
+## [0.1.2] - 2026-09-07
 
 ETA y progreso de pipelines basados en la corrida anterior: cada job corriendo muestra cuánto lleva contra lo que tardó la última vez, y el follow estima cuánto queda del total.
 
@@ -324,7 +324,8 @@ Primera release publicable. El proyecto pasa de scaffold de [IntelliJ Platform P
 
 - **Sideload local** — zip empaquetable con `./gradlew buildPlugin` en `build/distributions/gitlab-pipeline-watcher-0.0.1.zip` (~84 KB). Probado contra IntelliJ IDEA 2026.1 Ultimate, PyCharm 2026.1 y WebStorm 2026.1 — el plugin carga sin restart (`Plugin com.github.danielalejandroamaro.gitlabpipeline loaded without restart in 16 ms` en `idea.log`).
 
-[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.22...v0.1.0
 [0.0.22]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.0.21...v0.0.22
