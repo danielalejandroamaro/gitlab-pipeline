@@ -317,10 +317,18 @@ class ReleasesTabPanel(private val project: Project) {
                 val type = if (ok) NotificationType.INFORMATION else NotificationType.ERROR
                 val msg = if (ok) "Descargado en ${dest.absolutePath}"
                           else "No se pudo descargar ${asset.name}"
-                NotificationGroupManager.getInstance()
+                val notification = NotificationGroupManager.getInstance()
                     .getNotificationGroup("GitLab Pipeline Watcher")
                     .createNotification(msg, type)
-                    .notify(project)
+                if (ok) {
+                    notification.addAction(com.intellij.notification.NotificationAction.createSimpleExpiring("Abrir") {
+                        ApplicationManager.getApplication().executeOnPooledThread { java.awt.Desktop.getDesktop().open(dest) }
+                    })
+                    notification.addAction(com.intellij.notification.NotificationAction.createSimple(
+                        com.intellij.ide.actions.RevealFileAction.getActionName(),
+                    ) { com.intellij.ide.actions.RevealFileAction.openFile(dest) })
+                }
+                notification.notify(project)
             }
         }
     }
