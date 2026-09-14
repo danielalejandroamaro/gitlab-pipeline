@@ -41,7 +41,9 @@ internal class StagesStripPanel : JPanel(FlowLayout(FlowLayout.LEFT, 6, 4)) {
     override fun getPreferredSize(): Dimension {
         val base = super.getPreferredSize()
         val fl = layout as? FlowLayout ?: return base
-        val avail = width - insets.left - insets.right
+        // Mirror FlowLayout.layoutContainer exactly: maxwidth excludes 2*hgap and the fit check
+        // doesn't count the gap. Any drift here and the last row is clipped.
+        val avail = width - insets.left - insets.right - 2 * fl.hgap
         if (avail <= 0) return base
         var rowWidth = 0
         var rowHeight = 0
@@ -49,7 +51,7 @@ internal class StagesStripPanel : JPanel(FlowLayout(FlowLayout.LEFT, 6, 4)) {
         for (c in components) {
             if (!c.isVisible) continue
             val d = c.preferredSize
-            if (rowWidth > 0 && rowWidth + fl.hgap + d.width > avail) {
+            if (rowWidth > 0 && rowWidth + d.width > avail) {
                 total += rowHeight + fl.vgap
                 rowWidth = 0
                 rowHeight = 0
