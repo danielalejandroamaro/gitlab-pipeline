@@ -20,7 +20,7 @@
         <plugin id="org.jetbrains.plugins.gitlab"/>
     </dependencies>
 
-    <resource-bundle>messages.MyBundle</resource-bundle>
+    <resource-bundle>messages.PipelineBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow

@@ -1,6 +1,6 @@
 package com.github.danielalejandroamaro.gitlabpipeline.toolWindow
 
-import com.github.danielalejandroamaro.gitlabpipeline.MyBundle
+import com.github.danielalejandroamaro.gitlabpipeline.PipelineBundle
 import com.github.danielalejandroamaro.gitlabpipeline.model.Job as PipelineJob
 import com.github.danielalejandroamaro.gitlabpipeline.model.Pipeline
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
@@ -84,15 +84,15 @@ internal class PipelineTreeRenderer(
                     SimpleTextAttributes(SimpleTextAttributes.STYLE_STRIKEOUT, null)
                 } else SimpleTextAttributes.REGULAR_ATTRIBUTES
                 append("$action/$version", versionAttrs)
-                if (data.staleTag) append("  (${MyBundle["tree.staleTagSuffix"]})", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                if (data.staleTag) append("  (${PipelineBundle["tree.staleTagSuffix"]})", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 append("  #${p.id}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 if (p.tag && !p.ref.isNullOrBlank()) {
                     paintCopyIcon = true
                     toolTipText = if (data.staleTag)
-                        MyBundle["tree.tooltip.staleTag", p.ref]
-                    else MyBundle["tree.tooltip.copyVersion", p.ref]
+                        PipelineBundle["tree.tooltip.staleTag", p.ref]
+                    else PipelineBundle["tree.tooltip.copyVersion", p.ref]
                 } else if (!p.ref.isNullOrBlank()) {
-                    toolTipText = MyBundle["tree.tooltip.copyVersion", p.ref]
+                    toolTipText = PipelineBundle["tree.tooltip.copyVersion", p.ref]
                 }
             }
             is JobRow -> {
@@ -120,16 +120,16 @@ internal class PipelineTreeRenderer(
                     paintDownloadIcon = true
                     val sizeLabel = data.job.artifactsSize?.let { " · ${humanBytesShort(it)}" } ?: ""
                     val nameLabel = data.job.artifactsFilename ?: "artifacts.zip"
-                    toolTipText = MyBundle["tree.tooltip.downloadArtifacts", nameLabel, sizeLabel]
+                    toolTipText = PipelineBundle["tree.tooltip.downloadArtifacts", nameLabel, sizeLabel]
                 }
             }
             LoadingRow -> {
                 icon = AllIcons.Process.Step_1
-                append(MyBundle["tree.loadingJobs"], SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                append(PipelineBundle["tree.loadingJobs"], SimpleTextAttributes.GRAYED_ATTRIBUTES)
             }
             EmptyRow -> {
                 icon = AllIcons.General.QuestionDialog
-                append(MyBundle["tree.noJobs"], SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                append(PipelineBundle["tree.noJobs"], SimpleTextAttributes.GRAYED_ATTRIBUTES)
             }
         }
     }

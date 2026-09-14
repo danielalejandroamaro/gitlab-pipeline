@@ -1,6 +1,6 @@
 package com.github.danielalejandroamaro.gitlabpipeline.statusBar
 
-import com.github.danielalejandroamaro.gitlabpipeline.MyBundle
+import com.github.danielalejandroamaro.gitlabpipeline.PipelineBundle
 import com.github.danielalejandroamaro.gitlabpipeline.model.Pipeline
 import com.github.danielalejandroamaro.gitlabpipeline.model.PipelineStatus
 import com.github.danielalejandroamaro.gitlabpipeline.services.GitLabPipelineService
@@ -101,7 +101,7 @@ class PipelineStatusBarWidget(
     override fun getSelectedValue(): String? {
         val p = current ?: return null
         val refHint = (followingTag ?: p.ref)?.let { " · $it" } ?: ""
-        val stageHint = currentStage?.let { " · ${MyBundle["statusBar.currentStage"]} $it" } ?: ""
+        val stageHint = currentStage?.let { " · ${PipelineBundle["statusBar.currentStage"]} $it" } ?: ""
         return "Pipeline #${p.id}$refHint — ${labelFor(p.status)}$stageHint"
     }
 
@@ -109,9 +109,9 @@ class PipelineStatusBarWidget(
         val p = current ?: return null
         val ref = p.ref ?: "?"
         val sha = p.sha?.take(8) ?: "?"
-        val stageLine = currentStage?.let { "\n${MyBundle["statusBar.currentStage"]} $it" } ?: ""
+        val stageLine = currentStage?.let { "\n${PipelineBundle["statusBar.currentStage"]} $it" } ?: ""
         val breakdown = if (stagesSummary.isNotBlank()) "\nstages: $stagesSummary" else ""
-        return "GitLab pipeline #${p.id} — ${p.status.raw}\nref: $ref · sha: $sha$stageLine$breakdown\n" + MyBundle["statusBar.clickToOpen"]
+        return "GitLab pipeline #${p.id} — ${p.status.raw}\nref: $ref · sha: $sha$stageLine$breakdown\n" + PipelineBundle["statusBar.clickToOpen"]
     }
 
     override fun getIcon(): Icon? {
@@ -142,19 +142,19 @@ class PipelineStatusBarWidget(
     }
 
     private fun labelFor(status: PipelineStatus): String = when (status) {
-        PipelineStatus.SUCCESS -> MyBundle["status.success"]
-        PipelineStatus.FAILED -> MyBundle["status.failed"]
-        PipelineStatus.CANCELING -> MyBundle["status.canceling"]
-        PipelineStatus.CANCELED -> MyBundle["status.canceled"]
-        PipelineStatus.SKIPPED -> MyBundle["status.skipped"]
-        PipelineStatus.MANUAL -> MyBundle["status.manual"]
-        PipelineStatus.SCHEDULED -> MyBundle["status.scheduled"]
-        PipelineStatus.RUNNING -> MyBundle["status.running"]
-        PipelineStatus.PENDING -> MyBundle["status.pending"]
-        PipelineStatus.PREPARING -> MyBundle["status.preparing"]
-        PipelineStatus.WAITING_FOR_RESOURCE -> MyBundle["status.waiting_for_resource"]
-        PipelineStatus.CREATED -> MyBundle["status.created"]
-        PipelineStatus.UNKNOWN -> MyBundle["status.unknown"]
+        PipelineStatus.SUCCESS -> PipelineBundle["status.success"]
+        PipelineStatus.FAILED -> PipelineBundle["status.failed"]
+        PipelineStatus.CANCELING -> PipelineBundle["status.canceling"]
+        PipelineStatus.CANCELED -> PipelineBundle["status.canceled"]
+        PipelineStatus.SKIPPED -> PipelineBundle["status.skipped"]
+        PipelineStatus.MANUAL -> PipelineBundle["status.manual"]
+        PipelineStatus.SCHEDULED -> PipelineBundle["status.scheduled"]
+        PipelineStatus.RUNNING -> PipelineBundle["status.running"]
+        PipelineStatus.PENDING -> PipelineBundle["status.pending"]
+        PipelineStatus.PREPARING -> PipelineBundle["status.preparing"]
+        PipelineStatus.WAITING_FOR_RESOURCE -> PipelineBundle["status.waiting_for_resource"]
+        PipelineStatus.CREATED -> PipelineBundle["status.created"]
+        PipelineStatus.UNKNOWN -> PipelineBundle["status.unknown"]
     }
 
     companion object {

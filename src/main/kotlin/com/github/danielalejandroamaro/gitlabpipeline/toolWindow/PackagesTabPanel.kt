@@ -1,6 +1,6 @@
 package com.github.danielalejandroamaro.gitlabpipeline.toolWindow
 
-import com.github.danielalejandroamaro.gitlabpipeline.MyBundle
+import com.github.danielalejandroamaro.gitlabpipeline.PipelineBundle
 import com.github.danielalejandroamaro.gitlabpipeline.model.GitLabPackage
 import com.github.danielalejandroamaro.gitlabpipeline.services.GitLabPipelineService
 import com.intellij.icons.AllIcons
@@ -73,7 +73,7 @@ class PackagesTabPanel(private val project: Project) {
         border = BorderFactory.createEmptyBorder(4, 8, 4, 8)
     }
 
-    private val refreshButton = JButton(MyBundle["toolWindow.refresh"]).apply {
+    private val refreshButton = JButton(PipelineBundle["toolWindow.refresh"]).apply {
         addActionListener { service.refresh() }
     }
 
@@ -98,16 +98,16 @@ class PackagesTabPanel(private val project: Project) {
         refreshButton.isEnabled = !state.isRefreshing
         when {
             !state.ciEnabled -> {
-                statusLabel.text = MyBundle["toolWindow.noCi"]
+                statusLabel.text = PipelineBundle["toolWindow.noCi"]
                 rebuild(emptyList())
             }
             state.errorMessage != null -> statusLabel.text = state.errorMessage
             state.packages.isEmpty() -> {
-                statusLabel.text = if (state.lastRefreshedAt == 0L) MyBundle["toolWindow.loadingPackages"] else MyBundle["toolWindow.noPackages"]
+                statusLabel.text = if (state.lastRefreshedAt == 0L) PipelineBundle["toolWindow.loadingPackages"] else PipelineBundle["toolWindow.noPackages"]
                 rebuild(emptyList())
             }
             else -> {
-                statusLabel.text = MyBundle["toolWindow.packagesCount", state.packages.size]
+                statusLabel.text = PipelineBundle["toolWindow.packagesCount", state.packages.size]
                 rebuild(state.packages)
             }
         }
@@ -131,7 +131,7 @@ class PackagesTabPanel(private val project: Project) {
         val menu = JPopupMenu()
         if (pkg.packageType == "npm") {
             val cmd = "pnpm install ${pkg.name}"
-            menu.add(JMenuItem(MyBundle["packages.menu.copy", cmd], AllIcons.Actions.Copy).apply {
+            menu.add(JMenuItem(PipelineBundle["packages.menu.copy", cmd], AllIcons.Actions.Copy).apply {
                 addActionListener {
                     CopyPasteManager.getInstance().setContents(StringSelection(cmd))
                     notifyCopied(cmd)
@@ -139,7 +139,7 @@ class PackagesTabPanel(private val project: Project) {
             })
             pkg.version?.let { v ->
                 val cmdVersioned = "pnpm install ${pkg.name}@$v"
-                menu.add(JMenuItem(MyBundle["packages.menu.copy", cmdVersioned], AllIcons.Actions.Copy).apply {
+                menu.add(JMenuItem(PipelineBundle["packages.menu.copy", cmdVersioned], AllIcons.Actions.Copy).apply {
                     addActionListener {
                         CopyPasteManager.getInstance().setContents(StringSelection(cmdVersioned))
                         notifyCopied(cmdVersioned)
@@ -148,12 +148,12 @@ class PackagesTabPanel(private val project: Project) {
             }
         }
         pkg.webUrl?.let { url ->
-            menu.add(JMenuItem(MyBundle["toolWindow.openInBrowser"]).apply {
+            menu.add(JMenuItem(PipelineBundle["toolWindow.openInBrowser"]).apply {
                 addActionListener { BrowserUtil.browse(url) }
             })
         }
         menu.addSeparator()
-        menu.add(JMenuItem(MyBundle["packages.menu.delete", labelOf(pkg)], AllIcons.Actions.GC).apply {
+        menu.add(JMenuItem(PipelineBundle["packages.menu.delete", labelOf(pkg)], AllIcons.Actions.GC).apply {
             addActionListener { confirmAndDeletePackage(pkg) }
         })
         menu.show(tree, e.x, e.y)
@@ -168,8 +168,8 @@ class PackagesTabPanel(private val project: Project) {
         val label = labelOf(pkg)
         val ok = com.intellij.openapi.ui.Messages.showYesNoDialog(
             project,
-            MyBundle["packages.confirmDelete.message", label],
-            MyBundle["packages.confirmDelete.title"],
+            PipelineBundle["packages.confirmDelete.message", label],
+            PipelineBundle["packages.confirmDelete.title"],
             com.intellij.openapi.ui.Messages.getWarningIcon(),
         )
         if (ok != com.intellij.openapi.ui.Messages.YES) return
@@ -177,7 +177,7 @@ class PackagesTabPanel(private val project: Project) {
             val deleted = service.deletePackage(pkg.id)
             ApplicationManager.getApplication().invokeLater {
                 val type = if (deleted) NotificationType.INFORMATION else NotificationType.ERROR
-                val msg = if (deleted) MyBundle["packages.deleteResult.ok", label] else MyBundle["packages.deleteResult.fail", label]
+                val msg = if (deleted) PipelineBundle["packages.deleteResult.ok", label] else PipelineBundle["packages.deleteResult.fail", label]
                 NotificationGroupManager.getInstance()
                     .getNotificationGroup("GitLab Pipeline Watcher")
                     .createNotification(msg, type)
@@ -192,7 +192,7 @@ class PackagesTabPanel(private val project: Project) {
     private fun notifyCopied(text: String) {
         NotificationGroupManager.getInstance()
             .getNotificationGroup("GitLab Pipeline Watcher")
-            .createNotification(MyBundle["notification.clipboardCopied", text], NotificationType.INFORMATION)
+            .createNotification(PipelineBundle["notification.clipboardCopied", text], NotificationType.INFORMATION)
             .notify(project)
     }
 
@@ -212,6 +212,6 @@ private class PackagesTreeRenderer : ColoredTreeCellRenderer() {
         append(pkg.name, SimpleTextAttributes.REGULAR_ATTRIBUTES)
         pkg.version?.let { append("  $it", SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES) }
         append("  · ${pkg.packageType}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-        toolTipText = MyBundle["packages.tooltip"]
+        toolTipText = PipelineBundle["packages.tooltip"]
     }
 }
