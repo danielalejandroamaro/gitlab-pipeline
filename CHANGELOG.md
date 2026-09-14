@@ -9,6 +9,17 @@
 
 ## [Unreleased]
 
+<!-- v0.1.4 (pendiente de promoción) -->
+
+Limpieza de los avisos del Plugin Verifier de Marketplace sobre la 0.1.3: fuera el único uso de API programada para eliminación y el constructor deprecado del bundle, que además deja de llamarse `MyBundle`.
+
+- **Fix: API "scheduled for removal" en el combo de idioma** (`settings/PipelineSettingsConfigurable.kt`) — el verificador de Marketplace, contra IntelliJ IDEA 2026.2.2 y 2026.3 EAP, marcaba 1 uso de API a eliminar en futuras versiones: `SimpleListCellRenderer.create(String, Function)`, introducido en la 0.1.3 para pintar el combo "Idioma del plugin". Pasa a la variante `create(Customizer)` (`{ label, tag, _ -> label.text = … }`). Sin el cambio, la página de Settings dejaría de cargar en la versión del IDE que retire el método.
+- **Fix: constructor deprecado de `DynamicBundle`** (`PipelineBundle.kt`) — `DynamicBundle(String)` está deprecado en 2026.3 (en 2026.2 aún no lo marca); se usa `DynamicBundle(PipelineBundle::class.java, BUNDLE)`, que además fija el classloader del plugin para resolver el bundle.
+- **`MyBundle` → `PipelineBundle`** (`PipelineBundle.kt`, `messages/PipelineBundle{,_es,_zh_CN}.properties`, `META-INF/plugin.xml` y los 13 archivos que lo usan) — el nombre venía de la plantilla del IntelliJ Platform Plugin Template; ahora sigue la convención de la plataforma (`GitBundle`, `GitLabBundle`). Sin cambio de keys ni de textos. Los commits `241832a` + `5bda8aa` forman el cambio: el primero salió solo con los renames de archivo por un `git add` fallido y no compila aislado.
+- **Avisos que quedan y por qué** — los 8 "deprecated" (`MultipleTextValuesPresentation.getMaxValue/getPopupStep`, `ToolWindowFactory.isApplicable/isDoNotActivateOnStart`) y 8 "experimental" (`ToolWindowFactory.getAnchor/getIcon/manage`, `GitPushListener.onCompleted(…, Map)`) no son código del plugin: son overrides-puente que `kotlinc` genera en nuestras clases para cada método con cuerpo por defecto de esas interfaces (verificado con `javap`: cada uno solo hace `invokespecial` a la interfaz), y el verificador los cuenta como sobrescritos + invocados (de ahí el "(2)"). Quitarlos exigiría tocar el modo `-jvm-default` del compilador (`j8r3w6`, sin probar).
+- **Changelog** — PR #27 del template (promoción `[Unreleased]` → `[0.1.3]`) integrada en local restaurando los dos párrafos que `patchChangelog` descartaba: la intro de la 0.1.3 y, por tercera vez, la intro del tab Packages en `[0.0.21]`.
+- **Tests** — suite completa verde tras la última mezcla (7 tests, build limpio); `testBundlesSameKeysAndPlaceholders` y `testLanguageOverrideAndRawIds` cubren el bundle renombrado.
+
 ## [0.1.3] - 2026-09-14
 
 El plugin habla tres idiomas (inglés, español y chino simplificado) con selector propio en Settings, la franja de stages deja de recortar filas en tool windows estrechos y la notificación de descarga permite abrir el archivo o su carpeta.
