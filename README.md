@@ -83,12 +83,20 @@ If you'd rather go straight to gradle (with `JAVA_HOME` configured):
 ./gradlew test          # Tests
 ```
 
-Stack: Kotlin 2.1, IntelliJ Platform Gradle Plugin 2.16, JDK 21 (tested with Microsoft OpenJDK 21).
+Stack: Kotlin 2.4, IntelliJ Platform Gradle Plugin 2.18, JDK 21 (tested with Microsoft OpenJDK 21).
 
 Build notes:
 
 - `instrumentCode = false` in `build.gradle.kts` — there are no `.form` files or `@NotNull` to instrument, and it also sidesteps an IPP 2.16 bug that on non-JBR JDKs looks for `$JAVA_HOME\Packages` and crashes.
 - Dependencies declared with the modern `<dependencies><plugin id="..."/></dependencies>` syntax instead of legacy `<depends>` — avoids a stale Plugin Manager UI warning on 2026.1.
+
+### Plugin Verifier
+
+`verifyPlugin` runs with `failureLevel = FailureLevel.ALL`: **any** verifier finding fails the build — including deprecated, experimental, internal and scheduled-for-removal API usages. The plugin is verifier-clean since 1.0.0, so a new warning is a regression, not noise.
+
+- **`jvmDefault = JvmDefaultMode.NO_COMPATIBILITY`** (`kotlin { compilerOptions }` in `build.gradle.kts`) is what makes that possible. In the default mode `kotlinc` emits a bridge override in our classes for every method with a default body in the platform interfaces we implement, and each bridge `invokespecial`s the interface method. The verifier counts those as usages (overridden + invoked, hence the "(2)" per method), so the plugin was reported for APIs it never calls: `ToolWindowFactory.isApplicable/isDoNotActivateOnStart` (deprecated), `ToolWindowFactory.getAnchor/getIcon/manage` and `GitPushListener.onCompleted(…, Map)` (experimental), `StatusBarWidget.MultipleTextValuesPresentation.getMaxValue/getPopupStep` (deprecated). With `NO_COMPATIBILITY` no bridges are generated and the IDE resolves the interface defaults directly.
+- **History**: from 0.0.17 to 0.1.4 `failureLevel` excluded `DEPRECATED_API_USAGES`, `EXPERIMENTAL_API_USAGES` and `INTERNAL_API_USAGES`, because those bridges made every tag build red regardless of real regressions. Removed in 1.0.0.
+- **Checking locally without downloading every IDE**: `javap -c -p` on `build/classes/kotlin/main/**` to look for the method names, or run the verifier CLI (`verifier-cli-<ver>-all.jar check-plugin <zip> <ide-dir>`) against the IDE already cached by Gradle under `~/.gradle/caches/*/transforms/*/transformed/ideaIU-*`.
 
 ## License
 
