@@ -453,6 +453,13 @@ private class PipelinePanel(private val project: Project) {
                         addActionListener { BrowserUtil.browse(j.webUrl) }
                     })
                 }
+                val parent = (node.parent as? DefaultMutableTreeNode)?.userObject as? PipelineRow
+                if (parent != null && j.status in setOf(PipelineStatus.FAILED, PipelineStatus.CANCELED, PipelineStatus.SUCCESS)) {
+                    menu.addSeparator()
+                    menu.add(JMenuItem(PipelineBundle["job.menu.retry", j.name], AllIcons.Actions.Restart).apply {
+                        addActionListener { retryJob(parent.pipeline.id, j) }
+                    })
+                }
             }
         }
         if (menu.componentCount > 0) menu.show(tree, e.x, e.y)
@@ -496,6 +503,25 @@ private class PipelinePanel(private val project: Project) {
                     PipelineBundle["pipeline.retry.ok", p.id] to com.intellij.notification.NotificationType.INFORMATION
                 } else {
                     PipelineBundle["pipeline.retry.fail", p.id] to com.intellij.notification.NotificationType.ERROR
+                }
+                com.intellij.notification.NotificationGroupManager.getInstance()
+                    .getNotificationGroup("GitLab Pipeline Watcher")
+                    .createNotification(msg, type)
+                    .notify(project)
+                if (ok) service.refresh()
+            }
+        }
+    }
+
+    /** Retry a single job on a background thread; same flow as [retryPipeline]. */
+    private fun retryJob(pipelineId: Long, j: PipelineJob) {
+        scope.launch(Dispatchers.IO) {
+            val ok = service.retryJob(pipelineId, j.id)
+            ApplicationManager.getApplication().invokeLater {
+                val (msg, type) = if (ok) {
+                    PipelineBundle["job.retry.ok", j.name] to com.intellij.notification.NotificationType.INFORMATION
+                } else {
+                    PipelineBundle["job.retry.fail", j.name] to com.intellij.notification.NotificationType.ERROR
                 }
                 com.intellij.notification.NotificationGroupManager.getInstance()
                     .getNotificationGroup("GitLab Pipeline Watcher")
@@ -643,6 +669,7 @@ private class PipelinePanel(private val project: Project) {
      */
     private fun rebuildTree(pipelines: List<Pipeline>) {
         val staleIds = computeStaleTagIds(pipelines)
+        val siblingTags = computeSiblingTags(pipelines)
         val newIds = pipelines.mapTo(mutableSetOf()) { it.id }
         var removed = 0; var updated = 0; var inserted = 0
         // 1. Drop rows whose pipeline vanished from the list.
@@ -664,6 +691,7 @@ private class PipelinePanel(private val project: Project) {
             val newRow = PipelineRow(
                 p,
                 staleTag = p.id in staleIds,
+                siblingTags = siblingTags[p.id].orEmpty(),
                 mixedAmber = cachedJobs?.let { computeMixedAmber(it) } ?: false,
             )
             val existing = if (idx < rootNode.childCount) rootNode.getChildAt(idx) as DefaultMutableTreeNode else null

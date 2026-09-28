@@ -214,6 +214,18 @@ class GitLabPipelineService(
         return ok
     }
 
+    /** Retry one job; its pipeline goes back to running, so reset its notified sets like [retryPipeline]. */
+    fun retryJob(pipelineId: Long, jobId: Long): Boolean {
+        val client = cachedClient ?: return false
+        val pid = cachedProjectId ?: return false
+        val ok = client.retryJob(pid, jobId)
+        if (ok) {
+            notifiedStartedIds -= pipelineId
+            notifiedTerminalIds -= pipelineId
+        }
+        return ok
+    }
+
     /**
      * Create a NEW pipeline run on a ref (branch/tag). Used by "Relanzar pipeline" for pipelines
      * with nothing to retry (all jobs green). The new pipeline gets its own id, so the delta

@@ -48,12 +48,14 @@ class PipelineSettingsConfigurable(private val project: Project) : Configurable 
 
     /** Items are language tags ("" = IDE); rendered with their native name. */
     private val languageCombo = ComboBox(PipelineBundle.LANGUAGES.toTypedArray()).apply {
-        renderer = com.intellij.ui.SimpleListCellRenderer.create { label, tag, _ ->
-            label.text = when (tag) {
-                "en" -> "English"
-                "es" -> "Español"
-                "zh-CN" -> "简体中文"
-                else -> PipelineBundle["settings.languageAuto"]
+        renderer = object : com.intellij.ui.SimpleListCellRenderer<String>() {
+            override fun customize(list: javax.swing.JList<out String>, tag: String?, index: Int, selected: Boolean, hasFocus: Boolean) {
+                text = when (tag) {
+                    "en" -> "English"
+                    "es" -> "Español"
+                    "zh-CN" -> "简体中文"
+                    else -> PipelineBundle["settings.languageAuto"]
+                }
             }
         }
     }

@@ -2,11 +2,19 @@ import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 import org.jetbrains.intellij.platform.gradle.models.ProductRelease
 import org.jetbrains.intellij.platform.gradle.tasks.VerifyPluginTask.FailureLevel
+import org.jetbrains.kotlin.gradle.dsl.JvmDefaultMode
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
     id("org.jetbrains.intellij.platform")
     id("org.jetbrains.changelog")
+}
+
+// README.md § Development › Plugin Verifier
+kotlin {
+    compilerOptions {
+        jvmDefault = JvmDefaultMode.NO_COMPATIBILITY
+    }
 }
 
 intellijPlatform {
@@ -53,18 +61,8 @@ intellijPlatform {
                 untilBuild = "252.*"
             }
         }
-        // Fail on real compatibility problems (missing classes, invalid plugin, broken
-        // structure) but NOT on API-status signals: DEPRECATED/EXPERIMENTAL/INTERNAL
-        // usages are permanently red here — the Kotlin compiler generates bridge
-        // overrides for ToolWindowFactory's default methods (getIcon/getAnchor/manage,
-        // flagged internal in 2025.2, experimental in 253+), so FailureLevel.ALL made
-        // EVERY tag build fail regardless of regressions (v0.0.17 incident). The
-        // remaining levels still block genuinely broken releases.
-        failureLevel = FailureLevel.ALL.toList() - listOf(
-            FailureLevel.DEPRECATED_API_USAGES,
-            FailureLevel.EXPERIMENTAL_API_USAGES,
-            FailureLevel.INTERNAL_API_USAGES,
-        )
+        // README.md § Development › Plugin Verifier
+        failureLevel = FailureLevel.ALL.toList()
     }
 }
 

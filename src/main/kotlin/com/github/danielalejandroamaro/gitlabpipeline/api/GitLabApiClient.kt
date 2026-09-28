@@ -313,6 +313,20 @@ class GitLabApiClient(
             .getOrDefault(false)
     }
 
+    /** Retry a single job: GitLab clones it into a new job in the same pipeline. Returns true on 2xx. */
+    fun retryJob(projectId: Long, jobId: Long): Boolean {
+        val url = "$serverUrl/api/v4/projects/$projectId/jobs/$jobId/retry"
+        return runCatching {
+            HttpRequests.post(url, null)
+                .tuner { conn -> conn.setRequestProperty("PRIVATE-TOKEN", token) }
+                .connect { req ->
+                    val code = (req.connection as java.net.HttpURLConnection).responseCode
+                    code in 200..299
+                }
+        }.onFailure { logger.warn("retryJob($projectId,$jobId) failed: ${it.message}") }
+            .getOrDefault(false)
+    }
+
     /**
      * Create a NEW pipeline on a ref (branch or tag) — GitLab's "run again" for pipelines whose
      * jobs all succeeded (retry only re-runs failed/canceled jobs). Returns true on 2xx.
