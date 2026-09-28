@@ -6,7 +6,7 @@ JetBrains IDE plugin (IntelliJ IDEA, WebStorm, PyCharm, GoLand, Rider, …) that
 
 ## What it does
 
-- **"GitLab Pipelines" tool window** (bottom of the IDE) with an icon-tagged tree of recent pipelines: status, ref, short sha, source. Double-click opens the pipeline in your browser.
+- **"GitLab Pipelines" tool window** (bottom of the IDE) with an icon-tagged tree of recent pipelines: status, ref, short sha, source, how long ago it ran, and a tag icon when several tags ran pipelines on the same commit. Double-click opens the pipeline in your browser.
 - **Animated status bar widget** while a pipeline is `running`: an 8-frame spinner using IntelliJ's native icons; when the pipeline reaches a terminal state the icon freezes (green tick, red cross, cancel, skipped…). Tooltip with ID, status, ref and sha. Click → opens the pipeline.
 - **Tag-push detection** via `git4idea.push.GitPushListener`: any successful push from inside the IDE starts a follow loop that polls GitLab until it finds the pipeline triggered by the tag, then follows it through to terminal. The tool window auto-opens at the start of a follow and you get a notification; on terminal another notification shows duration and result.
 - **Auto-disabled when there is no `.gitlab-ci.yml`**: if the project doesn't have the file, the tool window and the widget stay hidden. If you create or delete the file at runtime, the plugin reacts via `AsyncFileListener` without restarting the IDE.
