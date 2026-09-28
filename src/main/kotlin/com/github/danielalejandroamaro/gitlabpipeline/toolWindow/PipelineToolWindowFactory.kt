@@ -669,6 +669,7 @@ private class PipelinePanel(private val project: Project) {
      */
     private fun rebuildTree(pipelines: List<Pipeline>) {
         val staleIds = computeStaleTagIds(pipelines)
+        val siblingTags = computeSiblingTags(pipelines)
         val newIds = pipelines.mapTo(mutableSetOf()) { it.id }
         var removed = 0; var updated = 0; var inserted = 0
         // 1. Drop rows whose pipeline vanished from the list.
@@ -690,6 +691,7 @@ private class PipelinePanel(private val project: Project) {
             val newRow = PipelineRow(
                 p,
                 staleTag = p.id in staleIds,
+                siblingTags = siblingTags[p.id].orEmpty(),
                 mixedAmber = cachedJobs?.let { computeMixedAmber(it) } ?: false,
             )
             val existing = if (idx < rootNode.childCount) rootNode.getChildAt(idx) as DefaultMutableTreeNode else null

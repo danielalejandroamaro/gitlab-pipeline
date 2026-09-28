@@ -9,6 +9,14 @@
 
 ## [Unreleased]
 
+<!-- v1.0.1 (pendiente de promoción) -->
+
+Cada fila de pipeline dice ahora cuándo corrió y avisa cuando un mismo commit se etiquetó con varios tags.
+
+- **Antigüedad de cada pipeline** (`toolWindow/PipelineTreeRenderer.kt`, `messages/PipelineBundle{,_es,_zh_CN}.properties`) — tras `#id` aparece `· hace 9 h` en gris, con la misma granularidad que la web de GitLab (ahora / min / h / d). `formatAgo` trunca en vez de redondear, así que nunca sale "hace 60 min" en el borde, y un `created_at` en el futuro (reloj del runner adelantado) se muestra como "justo ahora" en vez de un negativo. Se recalcula en cada repintado, así que el refresh periódico lo mantiene al día. El tooltip añade la hora exacta en la zona local (`2026-09-17 11:20`, `formatLocalClock`).
+- **Commits con varios tags** (`toolWindow/PipelineTreeRenderer.kt`, `toolWindow/PipelineToolWindowFactory.kt`) — cuando un push etiqueta el mismo commit con varios tags (p. ej. `v1.1.0` + `v0.5.0-oci`), GitLab lanza una pipeline por tag y el árbol las mostraba como filas sueltas sin relación. Ahora cada una lleva un icono de tag (`AllIcons.Nodes.Tag`) junto al punto de estado, y el tooltip lista los otros tags ("También etiquetado en este commit: …"). `computeSiblingTags` agrupa por `sha` las pipelines de tag de la lista ya cargada, sin llamadas extra a la API; tiene el mismo límite que la marca de "tag movido": si la pipeline hermana salió de la ventana de 20, no se detecta. Las pipelines de rama sobre el mismo commit no llevan el icono.
+- **Tests** — `testFormatAgoBuckets` (bordes de cada unidad, futuro, null y basura) y `testSiblingTagsSameSha` (hermanos, rama sin icono, tag solo). Suite completa verde.
+
 <!-- v1.0.0 (pendiente de promoción) -->
 
 Primera versión estable: el Plugin Verifier de Marketplace queda sin un solo aviso (0 usos de API programada para eliminación, deprecada, experimental o interna, frente a 1 + 8 + 8 en la 0.1.4), el CI vuelve a romper ante cualquiera, y los jobs se pueden reintentar desde el árbol.

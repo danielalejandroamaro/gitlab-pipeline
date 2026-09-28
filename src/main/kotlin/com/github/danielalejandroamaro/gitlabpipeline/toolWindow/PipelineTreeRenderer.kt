@@ -8,6 +8,7 @@ import com.github.danielalejandroamaro.gitlabpipeline.model.StageSummary
 import com.github.danielalejandroamaro.gitlabpipeline.ui.ColoredDotIcon
 import com.intellij.icons.AllIcons
 import com.intellij.ui.ColoredTreeCellRenderer
+import com.intellij.ui.RowIcon
 import com.intellij.ui.SimpleTextAttributes
 import java.awt.Dimension
 import java.awt.Graphics
@@ -21,6 +22,8 @@ internal data class PipelineRow(
     val staleTag: Boolean = false,
     /** True when the latest stage succeeded but an earlier stage failed — render row as amber. */
     val mixedAmber: Boolean = false,
+    /** Other tags whose pipelines ran on this same commit (multi-tag push). */
+    val siblingTags: List<String> = emptyList(),
 ) : TreeRow()
 internal data class JobRow(val job: PipelineJob) : TreeRow()
 internal object LoadingRow : TreeRow()
@@ -42,6 +45,45 @@ internal fun elapsedSeconds(startedAt: String?): Long? = startedAt?.let {
 /** "3m 25s" / "45s" — formato compacto para ETAs. */
 internal fun formatSeconds(s: Long): String =
     if (s >= 60) "${s / 60}m ${s % 60}s" else "${s}s"
+
+/**
+ * "hace 9 h" — antigüedad de un timestamp ISO-8601 de GitLab, con la misma granularidad que
+ * muestra la web (ahora / minutos / horas / días). null si el string falta o no parsea.
+ * ponytail: truncamiento, no redondeo — el bucket y el número se eligen con división entera,
+ * así nunca sale "hace 60 min" en el borde y el valor solo cambia al cruzar la unidad de verdad.
+ * [now] es parámetro para poder testear sin reloj real.
+ */
+internal fun formatAgo(iso: String?, now: java.time.Instant = java.time.Instant.now()): String? {
+    val then = iso?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() } ?: return null
+    val s = java.time.Duration.between(then, now).seconds.coerceAtLeast(0)
+    return when {
+        s < 60 -> PipelineBundle["tree.ago.now"]
+        s < 3600 -> PipelineBundle["tree.ago.m", s / 60]
+        s < 86_400 -> PipelineBundle["tree.ago.h", s / 3600]
+        else -> PipelineBundle["tree.ago.d", s / 86_400]
+    }
+}
+
+/** "2026-09-17 11:20" en la zona local — para el tooltip, donde sí interesa el reloj exacto. */
+internal fun formatLocalClock(iso: String?): String? = iso?.let {
+    runCatching {
+        java.time.Instant.parse(it)
+            .atZone(java.time.ZoneId.systemDefault())
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+    }.getOrNull()
+}
+
+/**
+ * pipeline id → the OTHER tags that ran pipelines on the same sha (one push, several tags).
+ * ponytail: only sees the loaded window, same ceiling as the stale-tag detection.
+ */
+internal fun computeSiblingTags(pipelines: List<Pipeline>): Map<Long, List<String>> {
+    val tagsBySha = pipelines.filter { it.tag && !it.sha.isNullOrBlank() && !it.ref.isNullOrBlank() }
+        .groupBy({ it.sha!! }, { it.ref!! })
+    return pipelines.filter { it.tag }.associate { p ->
+        p.id to (tagsBySha[p.sha].orEmpty().distinct() - p.ref.orEmpty())
+    }.filterValues { it.isNotEmpty() }
+}
 
 internal fun computeMixedAmber(jobs: List<PipelineJob>): Boolean {
     if (jobs.isEmpty()) return false
@@ -71,11 +113,14 @@ internal class PipelineTreeRenderer(
     ) {
         paintCopyIcon = false
         paintDownloadIcon = false
+        toolTipText = null
         val node = value as? DefaultMutableTreeNode ?: return
         when (val data = node.userObject) {
             is PipelineRow -> {
                 val p = data.pipeline
                 icon = if (data.mixedAmber) ColoredDotIcon.AMBER else iconFor(p.status)
+                // Multi-tag commit: tag icon next to the status dot; the tag list goes in the tooltip.
+                if (data.siblingTags.isNotEmpty()) icon = RowIcon(icon, AllIcons.Nodes.Tag)
                 // Format: "action/version  #id" — the version is the ref/tag/branch, so a double
                 // click can copy it directly without the user having to scan past the id first.
                 val action = p.source ?: "push"
@@ -86,6 +131,9 @@ internal class PipelineTreeRenderer(
                 append("$action/$version", versionAttrs)
                 if (data.staleTag) append("  (${PipelineBundle["tree.staleTagSuffix"]})", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 append("  #${p.id}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                // Cuándo corrió: relativo inline (como la web) y reloj exacto en el tooltip.
+                // Se recalcula en cada paint, así que el poll de refresh lo mantiene al día.
+                formatAgo(p.createdAt)?.let { append("  · $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
                 if (p.tag && !p.ref.isNullOrBlank()) {
                     paintCopyIcon = true
                     toolTipText = if (data.staleTag)
@@ -93,6 +141,13 @@ internal class PipelineTreeRenderer(
                     else PipelineBundle["tree.tooltip.copyVersion", p.ref]
                 } else if (!p.ref.isNullOrBlank()) {
                     toolTipText = PipelineBundle["tree.tooltip.copyVersion", p.ref]
+                }
+                if (data.siblingTags.isNotEmpty()) {
+                    val tags = PipelineBundle["tree.tooltip.sameCommitTags", data.siblingTags.joinToString(", ")]
+                    toolTipText = toolTipText?.let { "$it · $tags" } ?: tags
+                }
+                formatLocalClock(p.createdAt)?.let { clock ->
+                    toolTipText = toolTipText?.let { "$it · $clock" } ?: clock
                 }
             }
             is JobRow -> {

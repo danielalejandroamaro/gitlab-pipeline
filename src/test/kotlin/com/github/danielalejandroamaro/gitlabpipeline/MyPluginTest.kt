@@ -7,6 +7,8 @@ import com.github.danielalejandroamaro.gitlabpipeline.model.StageSummary
 import com.github.danielalejandroamaro.gitlabpipeline.settings.PipelineSettings
 import com.github.danielalejandroamaro.gitlabpipeline.toolWindow.StagesStripPanel
 import com.github.danielalejandroamaro.gitlabpipeline.toolWindow.computeMixedAmber
+import com.github.danielalejandroamaro.gitlabpipeline.toolWindow.computeSiblingTags
+import com.github.danielalejandroamaro.gitlabpipeline.toolWindow.formatAgo
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 
 class MyPluginTest : BasePlatformTestCase() {
@@ -30,6 +32,37 @@ class MyPluginTest : BasePlatformTestCase() {
         assertTrue(PipelineStatus.FAILED.isTerminal)
         assertFalse(PipelineStatus.RUNNING.isTerminal)
         assertEquals(PipelineStatus.UNKNOWN, PipelineStatus.fromRaw("nope"))
+    }
+
+    fun testSiblingTagsSameSha() {
+        fun p(id: Long, ref: String, sha: String, tag: Boolean = true) = com.github.danielalejandroamaro.gitlabpipeline.model.Pipeline(
+            id, null, 1, PipelineStatus.SUCCESS, ref, sha, tag, null, null, null, null, "push",
+        )
+        val got = computeSiblingTags(listOf(
+            p(3, "v1.1.0", "abc"), p(2, "v0.5.0-oci", "abc"), p(1, "main", "abc", tag = false), p(0, "v1.0.0", "def"),
+        ))
+        assertEquals(listOf("v0.5.0-oci"), got[3])
+        assertEquals(listOf("v1.1.0"), got[2])
+        assertNull(got[1])   // branch pipeline: no badge
+        assertNull(got[0])   // alone on its commit
+    }
+
+    fun testFormatAgoBuckets() {
+        // Reloj fijo: el de la captura donde la web mostraba "9 hours ago".
+        val now = java.time.Instant.parse("2026-09-17T18:22:41Z")
+        fun ago(secondsBack: Long) = formatAgo(now.minusSeconds(secondsBack).toString(), now)
+
+        assertEquals("just now", ago(0))
+        assertEquals("just now", ago(59))
+        assertEquals("1 min ago", ago(60))
+        assertEquals("59 min ago", ago(3599))   // borde: nunca "60 min"
+        assertEquals("1 h ago", ago(3600))
+        assertEquals("9 h ago", ago(9 * 3600 + 130))
+        assertEquals("23 h ago", ago(86_399))
+        assertEquals("1 d ago", ago(86_400))
+        assertEquals("just now", ago(-30))      // reloj del runner adelantado -> sin negativos
+        assertNull(formatAgo(null, now))
+        assertNull(formatAgo("no-es-fecha", now))
     }
 
     fun testMixedAmberLastStageWinsByTimestamp() {
