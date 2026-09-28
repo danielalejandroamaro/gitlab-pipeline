@@ -9,7 +9,7 @@
 
 ## [Unreleased]
 
-<!-- v1.0.1 (pendiente de promoción) -->
+## [1.0.1] - 2026-09-28
 
 Cada fila de pipeline dice ahora cuándo corrió y avisa cuando un mismo commit se etiquetó con varios tags.
 
@@ -367,7 +367,8 @@ Primera release publicable. El proyecto pasa de scaffold de [IntelliJ Platform P
 
 - **Sideload local** — zip empaquetable con `./gradlew buildPlugin` en `build/distributions/gitlab-pipeline-watcher-0.0.1.zip` (~84 KB). Probado contra IntelliJ IDEA 2026.1 Ultimate, PyCharm 2026.1 y WebStorm 2026.1 — el plugin carga sin restart (`Plugin com.github.danielalejandroamaro.gitlabpipeline loaded without restart in 16 ms` en `idea.log`).
 
-[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.4...v1.0.0
 [0.1.4]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.2...v0.1.3
