@@ -8,7 +8,6 @@ import com.github.danielalejandroamaro.gitlabpipeline.model.StageSummary
 import com.github.danielalejandroamaro.gitlabpipeline.ui.ColoredDotIcon
 import com.intellij.icons.AllIcons
 import com.intellij.ui.ColoredTreeCellRenderer
-import com.intellij.ui.RowIcon
 import com.intellij.ui.SimpleTextAttributes
 import java.awt.Dimension
 import java.awt.Graphics
@@ -119,8 +118,6 @@ internal class PipelineTreeRenderer(
             is PipelineRow -> {
                 val p = data.pipeline
                 icon = if (data.mixedAmber) ColoredDotIcon.AMBER else iconFor(p.status)
-                // Multi-tag commit: tag icon next to the status dot; the tag list goes in the tooltip.
-                if (data.siblingTags.isNotEmpty()) icon = RowIcon(icon, AllIcons.Nodes.Tag)
                 // Format: "action/version  #id" — the version is the ref/tag/branch, so a double
                 // click can copy it directly without the user having to scan past the id first.
                 val action = p.source ?: "push"
@@ -129,8 +126,9 @@ internal class PipelineTreeRenderer(
                     SimpleTextAttributes(SimpleTextAttributes.STYLE_STRIKEOUT, null)
                 } else SimpleTextAttributes.REGULAR_ATTRIBUTES
                 append("$action/$version", versionAttrs)
+                // Multi-tag commit: only the count inline (accent colour); the tag names go in the tooltip.
+                if (data.siblingTags.isNotEmpty()) append("  +${data.siblingTags.size}", SIBLING_TAGS_ATTRS)
                 if (data.staleTag) append("  (${PipelineBundle["tree.staleTagSuffix"]})", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-                append("  #${p.id}", SimpleTextAttributes.GRAYED_ATTRIBUTES)
                 // Cuándo corrió: relativo inline (como la web) y reloj exacto en el tooltip.
                 // Se recalcula en cada paint, así que el poll de refresh lo mantiene al día.
                 formatAgo(p.createdAt)?.let { append("  · $it", SimpleTextAttributes.GRAYED_ATTRIBUTES) }
@@ -247,5 +245,9 @@ internal class PipelineTreeRenderer(
         private const val COPY_ICON_RIGHT_PAD_PX = 12
         private const val COPY_ICON_LEFT_PAD_PX = 8
         private const val COPY_ICON_TOTAL_PADDING = COPY_ICON_LEFT_PAD_PX + COPY_ICON_RIGHT_PAD_PX
+        private val SIBLING_TAGS_ATTRS = SimpleTextAttributes(
+            SimpleTextAttributes.STYLE_BOLD or SimpleTextAttributes.STYLE_SMALLER,
+            com.intellij.ui.JBColor.namedColor("Link.activeForeground", com.intellij.ui.JBColor.BLUE),
+        )
     }
 }

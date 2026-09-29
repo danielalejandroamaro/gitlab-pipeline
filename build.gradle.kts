@@ -14,6 +14,9 @@ plugins {
 kotlin {
     compilerOptions {
         jvmDefault = JvmDefaultMode.NO_COMPATIBILITY
+        // README.md § Development › Build notes (apiVersion 2.2)
+        apiVersion = org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2
+        languageVersion = org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_2
     }
 }
 
@@ -22,6 +25,8 @@ intellijPlatform {
     // forms compiler / nullability bytecode rewrite step. It also dodges a
     // path-resolution bug on non-JBR JDKs (looks for $JAVA_HOME\Packages).
     instrumentCode = false
+    // README.md § Development › Build notes (autoReload)
+    autoReload = false
 
     pluginConfiguration {
         version = providers.gradleProperty("version")

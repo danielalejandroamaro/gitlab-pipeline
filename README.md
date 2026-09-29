@@ -6,7 +6,7 @@ JetBrains IDE plugin (IntelliJ IDEA, WebStorm, PyCharm, GoLand, Rider, …) that
 
 ## What it does
 
-- **"GitLab Pipelines" tool window** (bottom of the IDE) with an icon-tagged tree of recent pipelines: status, ref, short sha, source, how long ago it ran, and a tag icon when several tags ran pipelines on the same commit. Double-click opens the pipeline in your browser.
+- **"GitLab Pipelines" tool window** (bottom of the IDE) with an icon-tagged tree of recent pipelines: status, ref, short sha, source, how long ago it ran, and a `+N` badge when several tags ran pipelines on the same commit. Selecting a pipeline shows a details strip under the tree: its `#id` and every tag on that commit, each with a copy button. Double-click copies the version (ref/tag).
 - **Animated status bar widget** while a pipeline is `running`: an 8-frame spinner using IntelliJ's native icons; when the pipeline reaches a terminal state the icon freezes (green tick, red cross, cancel, skipped…). Tooltip with ID, status, ref and sha. Click → opens the pipeline.
 - **Tag-push detection** via `git4idea.push.GitPushListener`: any successful push from inside the IDE starts a follow loop that polls GitLab until it finds the pipeline triggered by the tag, then follows it through to terminal. The tool window auto-opens at the start of a follow and you get a notification; on terminal another notification shows duration and result.
 - **Auto-disabled when there is no `.gitlab-ci.yml`**: if the project doesn't have the file, the tool window and the widget stay hidden. If you create or delete the file at runtime, the plugin reacts via `AsyncFileListener` without restarting the IDE.
@@ -83,11 +83,13 @@ If you'd rather go straight to gradle (with `JAVA_HOME` configured):
 ./gradlew test          # Tests
 ```
 
-Stack: Kotlin 2.4, IntelliJ Platform Gradle Plugin 2.18, JDK 21 (tested with Microsoft OpenJDK 21).
+Stack: Kotlin 2.4, IntelliJ Platform Gradle Plugin 2.19, JDK 21 (tested with Microsoft OpenJDK 21).
 
 Build notes:
 
 - `instrumentCode = false` in `build.gradle.kts` — there are no `.form` files or `@NotNull` to instrument, and it also sidesteps an IPP 2.16 bug that on non-JBR JDKs looks for `$JAVA_HOME\Packages` and crashes.
+- `apiVersion`/`languageVersion = 2.2` in `build.gradle.kts`: the compiler is Kotlin 2.4, but IDE 2025.2 bundles a 2.2 stdlib. Left at 2.4, the compiler writes coroutine `@DebugMetadata(v=2)`, which that stdlib rejects (`Debug metadata version mismatch. Expected: 1, got 2`) whenever the coroutine debug probes walk a continuation of ours. The sandbox (`runIde`, internal mode) always has the probes on, so there it broke the GitLab token lookup (`No GitLab account configured` + "IDE error occurred"). Raise it together with the minimum platform (`sinceBuild`) (2026-09-29).
+- `autoReload = false`: with it on, the `runIde` sandbox detected the freshly copied `.jar` as "changed" right after startup and hot-reloaded the plugin. That dropped the tool window, and `PluginSearchableOptionContributor` crashed on the stale descriptor (`Can't find bundle for base name messages.PipelineBundle`). After a `buildPlugin`, restart the sandbox to pick up changes (2026-09-29).
 - Dependencies declared with the modern `<dependencies><plugin id="..."/></dependencies>` syntax instead of legacy `<depends>` — avoids a stale Plugin Manager UI warning on 2026.1.
 
 ### Plugin Verifier

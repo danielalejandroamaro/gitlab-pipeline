@@ -9,6 +9,17 @@
 
 ## [Unreleased]
 
+<!-- v1.0.2 (pendiente de promoción) -->
+
+Las filas de pipeline se aligeran: el `#id` y los nombres de los tags hermanos pasan a una franja de detalle con botones de copiar, y la fila solo muestra un `+N`.
+
+- **`+N` en lugar del icono de tag** (`toolWindow/PipelineTreeRenderer.kt`) — el icono `AllIcons.Nodes.Tag` que añadió la 1.0.1 para los commits con varios tags se ve en el New UI como un `<>` sin significado, y como solo aparecía en esas filas, las descuadraba respecto a las demás. Se quita el `RowIcon`: todas las filas vuelven a llevar solo el punto de estado, y los tags hermanos se cuentan con un `+N` tras la versión, en negrita pequeña con el color de enlace del tema (`Link.activeForeground`), para distinguirlo del texto gris. El tooltip sigue listando los tags ("También etiquetado en este commit: …").
+- **Franja de detalle del pipeline seleccionado** (`toolWindow/PipelineToolWindowFactory.kt`, `messages/PipelineBundle{,_es,_zh_CN}.properties`) — al seleccionar un pipeline aparece bajo el árbol, encima de la tira de stages, **"Detalles del commit: [#id]"**. Si el commit tiene varios tags, se añaden un separador y **"Tags: [tag] [tag] …"**, con el tag de la propia fila incluido. Cada elemento es un botón con icono de copiar: el `#id` copia el número sin `#` y cada tag copia su nombre. Las líneas usan `WrapLayout`, así que los tags largos bajan de línea en vez de cortarse. Al seleccionar un job o nada, la franja se oculta. El `#id` sale de la fila del árbol (`push/v1.1.2 +2 · hace 17 h`) y queda solo aquí; la copia del id por clic derecho sigue igual. Keys nuevas en los tres idiomas: `details.commit`, `details.commitTags`, `details.copyTag`.
+- **Fix: coroutines del plugin rechazadas por el stdlib del IDE** (`build.gradle.kts`) — el compilador Kotlin 2.4.20 escribe en las coroutines `@DebugMetadata(v=2)`, y el stdlib 2.2 que trae IntelliJ 2025.2 solo acepta `v=1`: cuando las debug probes de coroutines recorren una continuation nuestra, lanzan `Debug metadata version mismatch. Expected: 1, got 2`. En el sandbox (`runIde`, modo internal, probes siempre activas) rompía la lectura del token de GitLab (`GitLabAuthBridge.tokenFor`): salía "No GitLab account configured" y el globo "IDE error occurred". Se fija `apiVersion`/`languageVersion = KOTLIN_2_2`; verificado con `javap` que la metadata vuelve a `v=1`. Hay que subirlo a la vez que el `sinceBuild`.
+- **Dev: `autoReload = false` para `runIde`** (`build.gradle.kts`) — nada más arrancar, el sandbox veía el `.jar` recién copiado como modificado y recargaba el plugin en caliente. Con eso desaparecía el tool window y `PluginSearchableOptionContributor` fallaba con el descriptor ya descargado (`Can't find bundle for base name messages.PipelineBundle`). Solo afecta al desarrollo: después de un `buildPlugin` hay que reiniciar el sandbox.
+- **Docs** — README: línea de features al día (`+N`, franja de detalle; el doble clic copia la versión, no abre el navegador), "Stack" con IntelliJ Platform Gradle Plugin 2.19 y dos Build notes nuevas (`apiVersion 2.2`, `autoReload`), a las que apuntan los comentarios de `build.gradle.kts`.
+- **Tests** — suite completa verde (`./gradlew test`); `testBundlesSameKeysAndPlaceholders` cubre las keys nuevas en los tres idiomas.
+
 ## [1.0.1] - 2026-09-28
 
 Cada fila de pipeline dice ahora cuándo corrió y avisa cuando un mismo commit se etiquetó con varios tags.

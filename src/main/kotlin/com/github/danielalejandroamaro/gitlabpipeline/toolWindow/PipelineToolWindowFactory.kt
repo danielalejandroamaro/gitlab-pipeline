@@ -209,9 +209,48 @@ private class PipelinePanel(private val project: Project) {
     private val stagesPanel = StagesStripPanel()
     private val logsPanel = LiveLogsPanel(project, service, scope)
 
-    /** SOUTH-vertical: stages strip on top, logs panel below (logs only visible while running). */
+    /** Details of the selected pipeline: "Commit details: [#id]", a separator, then every tag on its commit when there are several; one copy button each. */
+    private val tagsPanel = JPanel().apply {
+        layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS)
+        border = BorderFactory.createEmptyBorder(2, 4, 2, 4)
+        isVisible = false
+    }
+
+    private fun copyButton(text: String, copied: String, label: String) = JButton(text, AllIcons.Actions.Copy).apply {
+        toolTipText = PipelineBundle["details.copyTag", text]
+        addActionListener { copyToClipboard(copied, label) }
+    }
+
+    private fun detailsLine(vararg items: JComponent) =
+        JPanel(com.intellij.util.ui.WrapLayout(java.awt.FlowLayout.LEFT, 4, 2)).apply {
+            alignmentX = java.awt.Component.LEFT_ALIGNMENT
+            items.forEach { add(it) }
+        }
+
+    private fun showTagsFor(row: PipelineRow?) {
+        tagsPanel.removeAll()
+        tagsPanel.isVisible = row != null
+        if (row != null) {
+            val id = row.pipeline.id
+            tagsPanel.add(detailsLine(JBLabel(PipelineBundle["details.commit"]), copyButton("#$id", "$id", "ID #$id")))
+            if (row.siblingTags.isNotEmpty()) {
+                val own = row.pipeline.ref?.takeIf { row.pipeline.tag && it.isNotBlank() }
+                val tags = listOfNotNull(own) + row.siblingTags
+                tagsPanel.add(javax.swing.JSeparator().apply { alignmentX = java.awt.Component.LEFT_ALIGNMENT })
+                tagsPanel.add(detailsLine(
+                    JBLabel(PipelineBundle["details.commitTags"]),
+                    *tags.map { copyButton(it, it, "tag $it") }.toTypedArray(),
+                ))
+            }
+        }
+        tagsPanel.revalidate()
+        tagsPanel.repaint()
+    }
+
+    /** SOUTH-vertical: tag details, stages strip, logs panel below (logs only visible while running). */
     private val southStack: JPanel = JPanel().apply {
         layout = javax.swing.BoxLayout(this, javax.swing.BoxLayout.Y_AXIS)
+        add(tagsPanel)
         add(stagesPanel)
         add(logsPanel.root)
     }
@@ -233,6 +272,9 @@ private class PipelinePanel(private val project: Project) {
     }
 
     init {
+        tree.addTreeSelectionListener { e ->
+            showTagsFor((e.newLeadSelectionPath?.lastPathComponent as? DefaultMutableTreeNode)?.userObject as? PipelineRow)
+        }
         subscription = scope.launch {
             service.state.collect { state -> render(state) }
         }
