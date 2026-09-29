@@ -9,9 +9,7 @@
 
 ## [Unreleased]
 
-<!-- v1.0.2 (pendiente de promoción) -->
-
-Las filas de pipeline se aligeran: el `#id` y los nombres de los tags hermanos pasan a una franja de detalle con botones de copiar, y la fila solo muestra un `+N`.
+## [1.0.2] - 2026-09-29
 
 - **`+N` en lugar del icono de tag** (`toolWindow/PipelineTreeRenderer.kt`) — el icono `AllIcons.Nodes.Tag` que añadió la 1.0.1 para los commits con varios tags se ve en el New UI como un `<>` sin significado, y como solo aparecía en esas filas, las descuadraba respecto a las demás. Se quita el `RowIcon`: todas las filas vuelven a llevar solo el punto de estado, y los tags hermanos se cuentan con un `+N` tras la versión, en negrita pequeña con el color de enlace del tema (`Link.activeForeground`), para distinguirlo del texto gris. El tooltip sigue listando los tags ("También etiquetado en este commit: …").
 - **Franja de detalle del pipeline seleccionado** (`toolWindow/PipelineToolWindowFactory.kt`, `messages/PipelineBundle{,_es,_zh_CN}.properties`) — al seleccionar un pipeline aparece bajo el árbol, encima de la tira de stages, **"Detalles del commit: [#id]"**. Si el commit tiene varios tags, se añaden un separador y **"Tags: [tag] [tag] …"**, con el tag de la propia fila incluido. Cada elemento es un botón con icono de copiar: el `#id` copia el número sin `#` y cada tag copia su nombre. Las líneas usan `WrapLayout`, así que los tags largos bajan de línea en vez de cortarse. Al seleccionar un job o nada, la franja se oculta. El `#id` sale de la fila del árbol (`push/v1.1.2 +2 · hace 17 h`) y queda solo aquí; la copia del id por clic derecho sigue igual. Keys nuevas en los tres idiomas: `details.commit`, `details.commitTags`, `details.copyTag`.
@@ -101,9 +99,6 @@ Refresh del árbol de pipelines sin flash ni colapso: la reconstrucción pasa de
 - **Fix: "Nothing to show" con N pipelines cargados** (`toolWindow/PipelineToolWindowFactory.kt`) — regresión intermedia del cambio anterior detectada en QA de esta misma versión: el root invisible del `JTree` arranca colapsado y solo los structure events de `reload()` lo expandían de gratis; al eliminar `reload()`, los inserts finos poblaban el modelo pero el árbol renderizaba vacío ("7 pipelines" en el status y "Nothing to show" debajo). Fix: `rebuildTree` expande explícitamente el root invisible cuando tiene hijos.
 - **`swapChildren` ahora es no-op si los hijos no cambiaron** (`toolWindow/PipelineToolWindowFactory.kt`) — el deep refresh (botón Refresh) lo llamaba incondicionalmente por cada pipeline expandido, y un ciclo idéntico de quitar-todo/reinsertar-todo repinta con parpadeo visible a cambio de nada. La comparación de userObjects (data classes) corta antes de tocar el modelo.
 - **Bump `org.jetbrains.intellij.platform` 2.16.0 → 2.18.1** (`settings.gradle.kts`) — quita el aviso "Gradle Plugin is outdated" de `initializeIntellijPlatformPlugin` en cada build; equivale al dependabot PR #11, que puede cerrarse al pushear esta release.
-
-Nuevo tab "Packages" en el tool window: el Package Registry del proyecto visible desde el IDE, con copia de `pnpm install <paquete>` al portapapeles, borrado de packages y notificación de packages nuevos en el auto-refresh.
-
 - **Tab "Packages" en el tool window** (`toolWindow/PackagesTabPanel.kt` nuevo, `toolWindow/PipelineToolWindowFactory.kt`) — cuarto content entre "Releases" y "Logs". Lista plana con una fila por versión publicada (`nombre versión · tipo`, icono PpJar), espejo del listado del propio GitLab. Mismo chasis que el tab Releases: label de estado ("N packages" / "Cargando packages…" / "(sin packages)"), botón Refresh compartido con el servicio, y suscripción al `StateFlow` — sin polling propio. Doble click sobre una fila abre la página del package en el navegador (URL absoluta construida desde `_links.web_path`).
 - **Copiar `pnpm install` desde el menú contextual** — click-derecho sobre un package **npm** ofrece "Copiar: `pnpm install <nombre>`" y, si la fila tiene versión, "Copiar: `pnpm install <nombre>@<versión>`" (instala la versión exacta de esa fila; el item sin versión instala latest). Copia al portapapeles vía `CopyPasteManager` + balloon de confirmación. Solo aparece en packages tipo npm — en maven/generic/pypi el comando no aplica. Completa el menú "Abrir en navegador" para cualquier tipo.
 - **Borrar package desde el menú contextual** (`api/GitLabApiClient.kt`, `services/GitLabPipelineService.kt`) — "Borrar package <nombre versión>" (icono GC, tras separador) con diálogo de confirmación que avisa que se borran todos los archivos y no hay deshacer → `DELETE /api/v4/projects/:id/packages/:package_id` en background (mismo patrón HttpRequests+DELETE que `deleteRelease`) → balloon con el resultado → refresh para que la fila desaparezca. Es el purge de binarios que el borrado de releases (v0.0.17) dejó documentado como pendiente. El bridge saca el id de `notifiedPackageIds`, así que republicar la misma versión vuelve a notificar.
@@ -378,7 +373,8 @@ Primera release publicable. El proyecto pasa de scaffold de [IntelliJ Platform P
 
 - **Sideload local** — zip empaquetable con `./gradlew buildPlugin` en `build/distributions/gitlab-pipeline-watcher-0.0.1.zip` (~84 KB). Probado contra IntelliJ IDEA 2026.1 Ultimate, PyCharm 2026.1 y WebStorm 2026.1 — el plugin carga sin restart (`Plugin com.github.danielalejandroamaro.gitlabpipeline loaded without restart in 16 ms` en `idea.log`).
 
-[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.4...v1.0.0
 [0.1.4]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.3...v0.1.4
