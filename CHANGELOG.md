@@ -9,25 +9,12 @@
 
 ## [Unreleased]
 
-<!-- v1.0.3 (pendiente de promoción) -->
-
-El panel ya no desaparece mientras el IDE indexa, y el plugin estrena icono.
+## [1.0.3] - 2026-10-26
 
 - **Fix: el tool window desaparecía durante el indexado** (`toolWindow/PipelineToolWindowFactory.kt`) — la factory no era `DumbAware`, así que mientras el IDE indexaba la plataforma tapaba las cuatro pestañas con *"This view is not available until indexes are built"*. En proyectos que entran y salen de dumb mode sin parar (ficheros que cambian todo el rato), el panel se veía unos segundos y "se desconectaba" sin dejar nada en el log. El plugin solo habla HTTP con GitLab y no usa índices, así que ahora es `DumbAware` y el panel sigue visible durante el indexado. README § How it works internally › DumbAware.
 - **Icono del plugin** (`META-INF/pluginIcon.svg`) — el plugin deja de salir con el icono genérico en Marketplace y en Settings › Plugins. Es un cubo isométrico 6×6 con los colores de GitLab y un gitflow encima. Un solo SVG sirve para los temas claro y oscuro, porque el fondo del cubo es oscuro.
 - **Dependencias** — Gradle wrapper 9.8.0 → 9.8.2, Kotlin 2.4.20 → 2.4.21 y `gradle/actions` 6.3.0 → 6.4.0 (PRs de Dependabot #34, #36 y #37, mergeados juntos en `e408d33`). Con Kotlin 2.4.21 se mantiene `apiVersion`/`languageVersion = 2.2`, así que la metadata de coroutines sigue en `v=1`.
 - **Tests** — suite completa verde (`./gradlew test`).
-
-<!-- v1.0.2 (pendiente de promoción) -->
-
-Las filas de pipeline se aligeran: el `#id` y los nombres de los tags hermanos pasan a una franja de detalle con botones de copiar, y la fila solo muestra un `+N`.
-
-- **`+N` en lugar del icono de tag** (`toolWindow/PipelineTreeRenderer.kt`) — el icono `AllIcons.Nodes.Tag` que añadió la 1.0.1 para los commits con varios tags se ve en el New UI como un `<>` sin significado, y como solo aparecía en esas filas, las descuadraba respecto a las demás. Se quita el `RowIcon`: todas las filas vuelven a llevar solo el punto de estado, y los tags hermanos se cuentan con un `+N` tras la versión, en negrita pequeña con el color de enlace del tema (`Link.activeForeground`), para distinguirlo del texto gris. El tooltip sigue listando los tags ("También etiquetado en este commit: …").
-- **Franja de detalle del pipeline seleccionado** (`toolWindow/PipelineToolWindowFactory.kt`, `messages/PipelineBundle{,_es,_zh_CN}.properties`) — al seleccionar un pipeline aparece bajo el árbol, encima de la tira de stages, **"Detalles del commit: [#id]"**. Si el commit tiene varios tags, se añaden un separador y **"Tags: [tag] [tag] …"**, con el tag de la propia fila incluido. Cada elemento es un botón con icono de copiar: el `#id` copia el número sin `#` y cada tag copia su nombre. Las líneas usan `WrapLayout`, así que los tags largos bajan de línea en vez de cortarse. Al seleccionar un job o nada, la franja se oculta. El `#id` sale de la fila del árbol (`push/v1.1.2 +2 · hace 17 h`) y queda solo aquí; la copia del id por clic derecho sigue igual. Keys nuevas en los tres idiomas: `details.commit`, `details.commitTags`, `details.copyTag`.
-- **Fix: coroutines del plugin rechazadas por el stdlib del IDE** (`build.gradle.kts`) — el compilador Kotlin 2.4.20 escribe en las coroutines `@DebugMetadata(v=2)`, y el stdlib 2.2 que trae IntelliJ 2025.2 solo acepta `v=1`: cuando las debug probes de coroutines recorren una continuation nuestra, lanzan `Debug metadata version mismatch. Expected: 1, got 2`. En el sandbox (`runIde`, modo internal, probes siempre activas) rompía la lectura del token de GitLab (`GitLabAuthBridge.tokenFor`): salía "No GitLab account configured" y el globo "IDE error occurred". Se fija `apiVersion`/`languageVersion = KOTLIN_2_2`; verificado con `javap` que la metadata vuelve a `v=1`. Hay que subirlo a la vez que el `sinceBuild`.
-- **Dev: `autoReload = false` para `runIde`** (`build.gradle.kts`) — nada más arrancar, el sandbox veía el `.jar` recién copiado como modificado y recargaba el plugin en caliente. Con eso desaparecía el tool window y `PluginSearchableOptionContributor` fallaba con el descriptor ya descargado (`Can't find bundle for base name messages.PipelineBundle`). Solo afecta al desarrollo: después de un `buildPlugin` hay que reiniciar el sandbox.
-- **Docs** — README: línea de features al día (`+N`, franja de detalle; el doble clic copia la versión, no abre el navegador), "Stack" con IntelliJ Platform Gradle Plugin 2.19 y dos Build notes nuevas (`apiVersion 2.2`, `autoReload`), a las que apuntan los comentarios de `build.gradle.kts`.
-- **Tests** — suite completa verde (`./gradlew test`); `testBundlesSameKeysAndPlaceholders` cubre las keys nuevas en los tres idiomas.
 
 ## [1.0.1] - 2026-09-28
 
@@ -110,9 +97,6 @@ Refresh del árbol de pipelines sin flash ni colapso: la reconstrucción pasa de
 - **Fix: "Nothing to show" con N pipelines cargados** (`toolWindow/PipelineToolWindowFactory.kt`) — regresión intermedia del cambio anterior detectada en QA de esta misma versión: el root invisible del `JTree` arranca colapsado y solo los structure events de `reload()` lo expandían de gratis; al eliminar `reload()`, los inserts finos poblaban el modelo pero el árbol renderizaba vacío ("7 pipelines" en el status y "Nothing to show" debajo). Fix: `rebuildTree` expande explícitamente el root invisible cuando tiene hijos.
 - **`swapChildren` ahora es no-op si los hijos no cambiaron** (`toolWindow/PipelineToolWindowFactory.kt`) — el deep refresh (botón Refresh) lo llamaba incondicionalmente por cada pipeline expandido, y un ciclo idéntico de quitar-todo/reinsertar-todo repinta con parpadeo visible a cambio de nada. La comparación de userObjects (data classes) corta antes de tocar el modelo.
 - **Bump `org.jetbrains.intellij.platform` 2.16.0 → 2.18.1** (`settings.gradle.kts`) — quita el aviso "Gradle Plugin is outdated" de `initializeIntellijPlatformPlugin` en cada build; equivale al dependabot PR #11, que puede cerrarse al pushear esta release.
-
-Nuevo tab "Packages" en el tool window: el Package Registry del proyecto visible desde el IDE, con copia de `pnpm install <paquete>` al portapapeles, borrado de packages y notificación de packages nuevos en el auto-refresh.
-
 - **Tab "Packages" en el tool window** (`toolWindow/PackagesTabPanel.kt` nuevo, `toolWindow/PipelineToolWindowFactory.kt`) — cuarto content entre "Releases" y "Logs". Lista plana con una fila por versión publicada (`nombre versión · tipo`, icono PpJar), espejo del listado del propio GitLab. Mismo chasis que el tab Releases: label de estado ("N packages" / "Cargando packages…" / "(sin packages)"), botón Refresh compartido con el servicio, y suscripción al `StateFlow` — sin polling propio. Doble click sobre una fila abre la página del package en el navegador (URL absoluta construida desde `_links.web_path`).
 - **Copiar `pnpm install` desde el menú contextual** — click-derecho sobre un package **npm** ofrece "Copiar: `pnpm install <nombre>`" y, si la fila tiene versión, "Copiar: `pnpm install <nombre>@<versión>`" (instala la versión exacta de esa fila; el item sin versión instala latest). Copia al portapapeles vía `CopyPasteManager` + balloon de confirmación. Solo aparece en packages tipo npm — en maven/generic/pypi el comando no aplica. Completa el menú "Abrir en navegador" para cualquier tipo.
 - **Borrar package desde el menú contextual** (`api/GitLabApiClient.kt`, `services/GitLabPipelineService.kt`) — "Borrar package <nombre versión>" (icono GC, tras separador) con diálogo de confirmación que avisa que se borran todos los archivos y no hay deshacer → `DELETE /api/v4/projects/:id/packages/:package_id` en background (mismo patrón HttpRequests+DELETE que `deleteRelease`) → balloon con el resultado → refresh para que la fila desaparezca. Es el purge de binarios que el borrado de releases (v0.0.17) dejó documentado como pendiente. El bridge saca el id de `notifiedPackageIds`, así que republicar la misma versión vuelve a notificar.
@@ -387,7 +371,8 @@ Primera release publicable. El proyecto pasa de scaffold de [IntelliJ Platform P
 
 - **Sideload local** — zip empaquetable con `./gradlew buildPlugin` en `build/distributions/gitlab-pipeline-watcher-0.0.1.zip` (~84 KB). Probado contra IntelliJ IDEA 2026.1 Ultimate, PyCharm 2026.1 y WebStorm 2026.1 — el plugin carga sin restart (`Plugin com.github.danielalejandroamaro.gitlabpipeline loaded without restart in 16 ms` en `idea.log`).
 
-[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v1.0.1...v1.0.3
 [1.0.1]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.4...v1.0.0
 [0.1.4]: https://github.com/danielalejandroamaro/gitlab-pipeline/compare/v0.1.3...v0.1.4
