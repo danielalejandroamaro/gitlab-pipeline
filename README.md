@@ -48,6 +48,10 @@ If the plugin can't locate the project on GitLab, the tool window says so explic
 
 After a push, polling snapshots the maximum tag-pipeline id we know about and looks for one with a larger `id` for roughly 10 minutes (every 2 s for the first 5 attempts, then every 10 s). Once found, it reads the pipeline every 8 s until terminal.
 
+### DumbAware
+
+`PipelineToolWindowFactory` implements `DumbAware`: the plugin only talks HTTP to GitLab and never touches PSI or indexes, so the tool window stays usable while the IDE is indexing. Without it the platform replaces the whole tool window with *"This view is not available until indexes are built"* for as long as the project is in dumb mode. In projects whose files keep changing (a dev server or build writing into the tree) the IDE re-enters dumb mode over and over, which looked like the tool window "disconnecting" a few seconds after showing up, with nothing in `idea.log` (PyCharm 2026.2, db-user-manager, 2026-10-26: 50 min in dumb mode).
+
 ## Known limitations
 
 - **CLI pushes** (outside the IDE) don't fire `GitPushListener`, so the automatic follow doesn't kick in. Workaround: hit Refresh in the tool window. Possible future iteration: periodic polling with `Alarm` while the tool window is visible.
