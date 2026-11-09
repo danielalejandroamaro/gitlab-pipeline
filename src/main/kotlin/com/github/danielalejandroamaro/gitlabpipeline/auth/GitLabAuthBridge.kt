@@ -1,10 +1,12 @@
 package com.github.danielalejandroamaro.gitlabpipeline.auth
 
 import com.intellij.collaboration.auth.AccountManagerBase
+import com.intellij.collaboration.auth.ServerAccount
+import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.thisLogger
+import com.intellij.openapi.extensions.PluginDescriptor
 import kotlinx.coroutines.runBlocking
-import org.jetbrains.plugins.gitlab.authentication.accounts.GitLabAccount
 
 /**
  * Bridge to the official JetBrains GitLab plugin (`org.jetbrains.plugins.gitlab`).
@@ -29,7 +31,7 @@ import org.jetbrains.plugins.gitlab.authentication.accounts.GitLabAccount
  * Fix here: look up the manager via `Class.forName(...)` so the bytecode of this file never
  * mentions `GitLabAccountManager` directly. The verifier scans references, not strings, so the
  * INTERNAL_API_USAGES count stays at zero. Method dispatch on the returned object goes through
- * `AccountManagerBase<GitLabAccount, Any>` (public, in `com.intellij.collaboration.auth`),
+ * `AccountManagerBase<ServerAccount, Any>` (public, in `com.intellij.collaboration.auth`),
  * so `accountsState.value` and `findCredentials(account)` both type-check against public API.
  * The credentials type is `Any` because 2026.2 changed it from `String` to the internal
  * `GitLabCredentials` sealed class — `tokenFor` handles both shapes at runtime.
@@ -49,6 +51,7 @@ object GitLabAuthBridge {
      * type — see the class doc above.
      */
     private const val MANAGER_FQN = "org.jetbrains.plugins.gitlab.authentication.accounts.GitLabAccountManager"
+    private const val GITLAB_PLUGIN_ID = "org.jetbrains.plugins.gitlab"
 
     /** Last service impl class returned by the platform, or `null` if the lookup failed. Exposed for the settings diagnostic. */
     @Volatile
@@ -63,13 +66,27 @@ object GitLabAuthBridge {
     data class ResolvedAccount(
         val serverUrl: String, // e.g. https://gitlab.example.com (no trailing slash)
         val name: String,
-        val rawAccount: GitLabAccount,
+        val rawAccount: ServerAccount,
     )
 
+    /**
+     * <=2026.2 the class lives in the GitLab plugin itself (visible from our classloader);
+     * 2026.3+ moved it to the content module `intellij.vcs.gitlab.backend`, with its own classloader.
+     */
+    private fun managerClass(): Class<*> = runCatching { Class.forName(MANAGER_FQN) }.getOrElse { first ->
+        // Reflection: PluginSet is internal and its signature changes between releases.
+        val set = PluginManagerCore::class.java.getMethod("getPluginSet").invoke(null)
+        (set.javaClass.getMethod("getEnabledModules").invoke(set) as List<*>)
+            .filterIsInstance<PluginDescriptor>()
+            .filter { it.pluginId.idString == GITLAB_PLUGIN_ID }
+            .firstNotNullOfOrNull { d -> runCatching { Class.forName(MANAGER_FQN, false, d.pluginClassLoader) }.getOrNull() }
+            ?: throw first
+    }
+
     @Suppress("UNCHECKED_CAST")
-    private val accountManager: AccountManagerBase<GitLabAccount, Any>?
+    private val accountManager: AccountManagerBase<ServerAccount, Any>?
         get() = runCatching {
-            val cls = Class.forName(MANAGER_FQN)
+            val cls = managerClass()
             val svc = ApplicationManager.getApplication().getService(cls)
             if (svc == null) {
                 lastResolvedManagerClass = null
@@ -78,7 +95,7 @@ object GitLabAuthBridge {
             }
             lastResolvedManagerClass = svc.javaClass.name
             lastResolutionError = null
-            svc as AccountManagerBase<GitLabAccount, Any>
+            svc as AccountManagerBase<ServerAccount, Any>
         }.onFailure {
             lastResolvedManagerClass = null
             lastResolutionError = "${it::class.simpleName}: ${it.message}"

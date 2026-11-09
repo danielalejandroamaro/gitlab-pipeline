@@ -9,6 +9,14 @@
 
 ## [Unreleased]
 
+<!-- v1.0.4 (pendiente de promoción) -->
+
+El plugin vuelve a encontrar las cuentas de GitLab en los IDE 2026.3, sin dejar de funcionar en 2026.2.
+
+- **Fix: cuentas de GitLab invisibles en 2026.3** (`auth/GitLabAuthBridge.kt`) — en 2026.3 JetBrains partió el plugin GitLab en módulos de contenido, y `GitLabAccountManager` (mismo FQN) pasó del jar principal a `lib/modules/intellij.vcs.gitlab.backend.jar`, con su propio classloader. Nuestro `Class.forName` solo ve el classloader principal del plugin GitLab, así que fallaba con `ClassNotFoundException`. Por eso la página de ajustes mostraba "Accounts detected: 0" y el log repetía "No GitLab account configured" cada pocos segundos. La nueva `managerClass()` intenta primero el `Class.forName` de siempre, que es la ruta que sigue usando 2026.2, donde la clase está en `plugins/vcs-gitlab/lib/intellij.vcs.gitlab.jar`. Si falla, recorre los módulos activos del plugin `org.jetbrains.plugins.gitlab` (`PluginManagerCore.getPluginSet().getEnabledModules()`) y carga la clase con el classloader de cada uno. `PluginSet` es API interna y su firma cambia entre versiones, así que se llama por reflexión. Además, el puente deja de referenciar `GitLabAccount` en el bytecode: trabaja con `ServerAccount`, la clase pública de `com.intellij.collaboration.auth` de la que hereda, y solo usa `server` y `name`. Con la clase en otro classloader, cualquier `checkcast` a `GitLabAccount` habría fallado igual.
+- **Verificación** — Plugin Verifier: `Compatible` contra PyCharm 2026.2.4 (PY-262.11879.98) y PyCharm 2026.3 (PY-263.7307.206), sin avisos. Lo pasé con un `build.gradle.kts` temporal, que quedó restaurado.
+- **Tests** — suite completa verde (`./gradlew test`).
+
 <!-- v1.0.3 (pendiente de promoción) -->
 
 El panel ya no desaparece mientras el IDE indexa, y el plugin estrena icono.
